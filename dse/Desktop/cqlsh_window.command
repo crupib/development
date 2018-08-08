@@ -1,0 +1,1 @@
+/Users/crupib/dse/bin/cqlsh_window

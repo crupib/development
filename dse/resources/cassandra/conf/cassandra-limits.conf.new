@@ -1,0 +1,22 @@
+# Provided by the cassandra package
+
+*          soft nofile   32768
+*          hard nofile   32768
+root       soft nofile   32768
+root       hard nofile   32768
+cassandra  -    nofile   100000
+
+*          soft memlock  unlimited
+*          hard memlock  unlimited
+root       soft memlock  unlimited
+root       hard memlock  unlimited
+cassandra  -    memlock  unlimited
+
+*          soft as       unlimited
+*          hard as       unlimited
+root       soft as       unlimited
+root       hard as       unlimited
+cassandra  -    as       unlimited
+
+cassandra  -  nproc      8096
+

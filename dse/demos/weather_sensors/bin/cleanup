@@ -1,0 +1,25 @@
+#!/bin/sh
+
+if [ -z "$@" ]; then
+    unset DSE_PATH
+    if ! command -v dse > /dev/null; then
+        echo "Please make sure 'dse' is in the system path, then try again"
+        exit 1
+    fi
+else
+    DSE_PATH=$@/bin/
+fi
+
+set -x #echo on
+
+echo "TRUNCATE weathercql.historical;" | ${DSE_PATH}cqlsh `hostname -f`
+echo "TRUNCATE weathercql.station;" | ${DSE_PATH}cqlsh `hostname -f`
+echo "TRUNCATE weathercql.daily;" | ${DSE_PATH}cqlsh `hostname -f`
+echo "TRUNCATE weathercql.monthly;" | ${DSE_PATH}cqlsh `hostname -f`
+
+${DSE_PATH}dse hive -e "DROP TABLE weatherdfs.station;"
+${DSE_PATH}dse hive -e "DROP TABLE weatherdfs.daily;"
+${DSE_PATH}dse hive -e "DROP TABLE weatherdfs.monthly;"
+${DSE_PATH}dse hive -e "DROP DATABASE weatherdfs;"
+
+${DSE_PATH}dse hadoop fs -rmr /datastax/demos/weather_sensors

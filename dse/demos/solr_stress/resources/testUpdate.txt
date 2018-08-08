@@ -1,0 +1,3 @@
+SEQUENTIAL
+HTTPUPDATE|body, title|wt=json&q=body:plane
+HTTPUPDATE|ALLSTR|wt=json&q=body:plane

@@ -1,0 +1,120 @@
+#!/bin/sh
+
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+if [ -z "$DSE_ENV" ]; then
+    for include in "$HOME/.dse-env.sh" \
+                   "`dirname "$0"`/dse-env.sh" \
+                   "`dirname "$0"`/../../../bin/dse-env.sh" \
+                   "/etc/dse/dse-env.sh"; do
+        if [ -r "$include" ]; then
+            DSE_ENV="$include"
+            break
+        fi
+    done
+fi
+
+if [ -z "$DSE_ENV" ]; then
+    echo "DSE_ENV could not be determined."
+    exit 1
+elif [ -r "$DSE_ENV" ]; then
+    . "$DSE_ENV"
+else
+    echo "Location pointed by DSE_ENV not readable: $DSE_ENV"
+    exit 1
+fi
+
+if [ "x$CASSANDRA_INCLUDE" = "x" ]; then
+    for include in "`dirname "$0"`/cassandra.in.sh" \
+                   "$HOME/.cassandra.in.sh" \
+                   /usr/share/cassandra/cassandra.in.sh \
+                   /usr/local/share/cassandra/cassandra.in.sh \
+                   /opt/cassandra/cassandra.in.sh \
+                   "$HOME/.cassandra.in.sh" \
+                   "`dirname "$0"`/cassandra.in.sh"; do
+        if [ -r "$include" ]; then
+            . "$include"
+            break
+        fi
+    done
+elif [ -r "$CASSANDRA_INCLUDE" ]; then
+    . "$CASSANDRA_INCLUDE"
+fi
+
+# Use JAVA_HOME if set, otherwise look for java in PATH
+if [ -x "$JAVA_HOME/bin/java" ]; then
+    JAVA="$JAVA_HOME/bin/java"
+else
+    JAVA="`which java`"
+fi
+
+if [ -z "$CLASSPATH" ]; then
+    echo "You must set the CLASSPATH var" >&2
+    exit 1
+fi
+
+# Special-case path variables.
+case "`uname`" in
+    CYGWIN*)
+        CLASSPATH="`cygpath -p -w "$CLASSPATH"`"
+        CASSANDRA_CONF="`cygpath -p -w "$CASSANDRA_CONF"`"
+    ;;
+esac
+
+# If a transport factory was specified use that, otherwise default to the DSE-provided implementation
+TRANSPORT_FACTORY="com.datastax.bdp.transport.client.TDseClientTransportFactory"
+ARGS=""
+while true
+do
+  if [ ! $1 ]; then break; fi
+  if [ $1 = "--nodes" ] || [ $1 = "-d" ]
+    then
+      JVM_OPTS="$JVM_OPTS -Dclient.hosts=$2";
+      ARGS="$ARGS $1 $2"
+      shift
+  elif [ $1 = "--port" ] || [ $1 = "-p" ]
+    then
+      JVM_OPTS="$JVM_OPTS -Dclient.port=$2";
+      ARGS="$ARGS $1 $2"
+      shift
+  elif [ $1 = "--username" ] || [ $1 = "-u" ]
+    then
+      JVM_OPTS="$JVM_OPTS -Dclient.username=$2";
+      ARGS="$ARGS $1 $2"
+      shift
+  elif [ $1 = "--password" ] || [ $1 = "-pw" ]
+    then
+      JVM_OPTS="$JVM_OPTS -Dclient.password=$2";
+      ARGS="$ARGS $1 $2"
+      shift
+  elif [ $1 = "--transport-factory" ] || [ $1 = "-tf" ]
+    then
+      TRANSPORT_FACTORY="$2";
+      shift
+  else
+    ARGS="$ARGS $1"
+  fi;
+  shift
+done
+
+"$JAVA" $JAVA_AGENT $JVM_OPTS $DSE_OPTS -ea -cp "$CLASSPATH" -Xmx256M \
+        -Ddse.replicatedkeyprovider.usethrift=true \
+        -Dcassandra.storagedir="$cassandra_storagedir" \
+        -Dlogback.configurationFile=logback-tools.xml \
+        org.apache.cassandra.tools.BulkLoader -tf $TRANSPORT_FACTORY $ARGS
+
+# vi:ai sw=4 ts=4 tw=0 et

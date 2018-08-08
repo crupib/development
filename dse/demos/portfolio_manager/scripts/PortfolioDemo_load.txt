@@ -1,0 +1,49 @@
+create keyspace PortfolioDemo
+  with placement_strategy = 'SimpleStrategy'
+  and strategy_options = [{replication_factor : 1}];
+
+use PortfolioDemo;
+
+create column family HistLoss
+  with column_type = 'Standard'
+  and comparator = 'UTF8Type'
+  and default_validation_class = 'UTF8Type'
+  and key_validation_class = 'UTF8Type'
+  and read_repair_chance = 1.0
+  and gc_grace = 60
+  and min_compaction_threshold = 4
+  and max_compaction_threshold = 32
+  and replicate_on_write = true;
+
+create column family Portfolios
+  with column_type = 'Standard'
+  and comparator = 'UTF8Type'
+  and default_validation_class = 'DoubleType'
+  and key_validation_class = 'LongType'
+  and read_repair_chance = 1.0
+  and gc_grace = 60
+  and min_compaction_threshold = 4
+  and max_compaction_threshold = 32
+  and replicate_on_write = true;
+
+create column family StockHist
+  with column_type = 'Standard'
+  and comparator = 'UTF8Type'
+  and default_validation_class = 'DoubleType'
+  and key_validation_class = 'UTF8Type'
+  and read_repair_chance = 1.0
+  and gc_grace = 60
+  and min_compaction_threshold = 4
+  and max_compaction_threshold = 32
+  and replicate_on_write = true;
+
+create column family Stocks
+  with column_type = 'Standard'
+  and comparator = 'UTF8Type'
+  and default_validation_class = 'DoubleType'
+  and key_validation_class = 'UTF8Type'
+  and read_repair_chance = 1.0
+  and gc_grace = 60
+  and min_compaction_threshold = 4
+  and max_compaction_threshold = 32
+  and replicate_on_write = true;

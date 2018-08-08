@@ -1,0 +1,2 @@
+SEQUENTIAL
+HTTPWRITE|text=This is a benchmark of dse search|type=$RANDOM_10|id=$RANDOM_UUID

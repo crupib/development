@@ -1,0 +1,13 @@
+#!/bin/sh
+
+if [ -f /etc/default/dse ]; then
+  . /etc/default/dse
+fi
+
+if [ -f "$(dirname "$0")/../bin/dse" ]; then
+  exec "$(dirname "$0")/../bin/dse" nodetool "$@"
+else
+  exec "$DSE_HOME"/bin/dse nodetool "$@"
+fi
+
+# vi:ai sw=4 ts=4 tw=0 et

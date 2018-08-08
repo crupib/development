@@ -1,0 +1,9 @@
+#!/bin/sh
+
+if [ -x "/usr/bin/sw_vers" ]; then
+  open http://datastax.com/docs/latest-dse/ > /dev/null 2>&1
+else
+  exec xdg-open http://datastax.com/docs/latest-dse/ > /dev/null 2>&1 &
+fi
+exit 0
+

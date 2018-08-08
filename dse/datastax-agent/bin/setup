@@ -1,0 +1,20 @@
+#!/bin/bash
+#
+# Script to setup the conf files for an agent.
+
+cd `dirname $0`/../
+
+if [ $# -lt 1 ]; then
+    echo "Usage: $0 <opscenterd address>"
+    exit 2
+fi
+
+OPSCENTER_ADDR=$1
+ADDR_CONF="conf/address.yaml"
+
+# Set up the config file that holds opscenterd and local addresses
+mkdir -pv "$(dirname "$ADDR_CONF")"
+cat > "$ADDR_CONF" <<EOF
+stomp_interface: "$OPSCENTER_ADDR"
+EOF
+

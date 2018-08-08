@@ -1,0 +1,91 @@
+#!/bin/bash
+# Start the datastax-agent process
+
+cd "$(dirname "$0")"/../
+
+# Read configuration variable file if it is present
+[ -r /etc/default/datastax-agent ] && . /etc/default/datastax-agent
+
+background=1
+
+# Parse any command line options.
+if ! args=$(getopt f -- "$@")
+then
+    # bad options, getopt will have printed something
+    exit 1
+fi
+set -- $args
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -f)
+            # run in the current process
+            JVM_OPTS="$JVM_OPTS -Dagent-foreground=yes"
+            background=0
+            shift
+        ;;
+        --)
+            shift
+        ;;
+        *)
+            echo "Invalid argument: $1" >&2
+            exit 1
+        ;;
+    esac
+done
+
+# find a general conf dir
+for include in ./local \
+               ./conf \
+               /etc/datastax-agent; do
+    if [ -r "$include" ]; then
+        OPSC_CONF_DIR=$include
+        [ -r "$OPSC_CONF_DIR/datastax-agent-env.sh" ] && . $OPSC_CONF_DIR/datastax-agent-env.sh
+        break
+    fi
+done
+
+JAVA="$(./bin/find-java)"
+if [ $? -ne 0 ]; then
+    echo "Unable to find a java executable!"
+    echo "Please install java or set JAVA_HOME."
+    exit 1
+fi
+
+shopt -s nullglob
+JARS=(datastax-agent*standalone.jar)
+if [[ ${#JARS[@]} -eq 0 ]]; then
+  JARS=(target/datastax-agent*standalone.jar)
+fi
+
+if [[ ${#JARS[@]} -gt 1 ]]; then
+    echo "Multiple versions of the datastax-agent jar files exist: ${JARS[*]}"
+    exit 1
+else
+    JAR=${JARS[0]}
+fi
+shopt -u nullglob
+
+[ "x$PID" = "x" ] && PID="./datastax-agent.pid"
+[ "x$OPSC_SSL_DIR" = "x" ] && OPSC_SSL_DIR="ssl"
+[ "x$OPSC_ADDR_DIR" = "x" ] && OPSC_ADDR_DIR="$OPSC_CONF_DIR"
+JVM_OPTS="$JVM_OPTS -Dopscenter.ssl.trustStore=$OPSC_SSL_DIR/agentKeyStore"
+JVM_OPTS="$JVM_OPTS -Dopscenter.ssl.keyStore=$OPSC_SSL_DIR/agentKeyStore"
+JVM_OPTS="$JVM_OPTS -Dopscenter.ssl.keyStorePassword=opscenter"
+JVM_OPTS="$JVM_OPTS -Dagent-pidfile=$PID"
+JVM_OPTS="$JVM_OPTS -Dlog4j.configuration=file:$OPSC_CONF_DIR/log4j.properties"
+JVM_OPTS="$JVM_OPTS -Djava.security.auth.login.config=$OPSC_CONF_DIR/kerberos.config"
+
+export LC_NUMERIC="en_US.UTF-8"
+if [ $background == 1 ]; then
+    if [ -n "$STARTUP_LOG" ]; then
+        # Redirect stdout to a log file, leave stderr open
+        exec >"$STARTUP_LOG"
+    fi
+    exec $JAVA $JVM_OPTS -jar $JAR "$OPSC_ADDR_DIR/address.yaml" &
+else
+    $JAVA $JVM_OPTS -jar $JAR "$OPSC_ADDR_DIR/address.yaml"
+fi
+RES=$!
+
+[ ! -z "$PID" ] && printf "%d" $RES > "$PID"

@@ -1,0 +1,32 @@
+#!/bin/sh
+
+INSTALL_DIR="/usr/share/dse"
+if [ -f /etc/init.d/datastax-agent ]; then
+  if [ -x "`which invoke-rc.d 2>/dev/null`" ]; then
+    invoke-rc.d datastax-agent stop || true
+  else
+    if [ -x /sbin/service ]; then
+      /sbin/service datastax-agent stop || true
+    else
+      /etc/init.d/datastax-agent stop || true
+    fi
+  fi
+else
+  if [ -f ~/Library/LaunchAgents/com.datastax.agent.plist ]; then
+    launchctl unload ~/Library/LaunchAgents/com.datastax.agent.plist
+  fi
+  PID=""
+  if [ "x$PID" = "x" ]; then
+    PID=`ps -ww -ef|grep datastax-agent|grep standalone.jar|grep -v grep|awk '{print $2}' 2> /dev/null`;
+  fi
+  if [ "x$PID" = "x" ]; then
+    PID=`ps -edaf|grep datastax-agent|grep standalone.jar|grep java|awk '{print $2}' 2> /dev/null`;
+  fi
+  if [ "x$PID" = "x" ]; then
+    echo "Unable to find DataStax Agent process probably alrady stopped."
+    exit 1
+  else
+      kill $PID
+  fi
+fi
+

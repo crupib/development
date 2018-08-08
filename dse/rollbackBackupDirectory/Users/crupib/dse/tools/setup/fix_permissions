@@ -1,0 +1,236 @@
+#!/bin/bash
+echo "$*"
+
+INSTALL_DIR=$1
+SYSTEM_INSTALL=$2
+DISTRIBUTION=$3
+DATA_DIR=$4
+COMMITLOG_DIR=$5
+SAVED_CACHES_DIR=$6
+LOGS_DIR=$7
+USERNAME=$8
+CASSANDRA_USER=$9
+CASSANDRA_GROUP=${10}
+CASSANDRA_GROUP_SEP=:
+if [ "$CASSANDRA_GROUP" = "" ]; then
+  CASSANDRA_GROUP_SEP=
+fi
+
+echo "INSTALL_DIR=$INSTALL_DIR"
+echo "SYSTEM_INSTALL=$SYSTEM_INSTALL"
+echo "DISTRIBUTION=$DISTRIBUTION"
+echo "DATA_DIR=$DATA_DIR"
+echo "COMMITLOG_DIR=$COMMITLOG_DIR"
+echo "SAVED_CACHES_DIR=$SAVED_CACHES_DIR"
+echo "LOGS_DIR=$LOGS_DIR"
+echo "USERNAME=$USERNAME"
+echo "CASSANDRA_USER=$CASSANDRA_USER"
+echo "CASSANDRA_GROUP=$CASSANDRA_GROUP"
+
+chown -R "$USERNAME": "$INSTALL_DIR"
+if [ -f $HOME/.cqlshrc ]; then
+  chown "$USERNAME": "$HOME/.cqlshrc"
+fi
+if [ -d $HOME/.cassandra ]; then
+  chown "$USERNAME": "$HOME/.cassandra"
+fi
+if [ "$DISTRIBUTION" != "osx" ]; then
+  if [ "$SYSTEM_INSTALL" != "no_services" ]; then
+    if [ "$CASSANDRA_USER" != "" ]; then
+      # Change file ownerships
+      if [ -d "$DATA_DIR" ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$DATA_DIR"
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$DATA_DIR"
+        chmod -R 750 "$DATA_DIR"
+      fi
+      if [ -d "$COMMITLOG_DIR" ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$COMMITLOG_DIR"
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$COMMITLOG_DIR"
+      fi
+      if [ -d "$SAVED_CACHES_DIR" ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$SAVED_CACHES_DIR"
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$SAVED_CACHES_DIR"
+      fi
+
+      if [ -d "$LOGS_DIR" ]; then
+        if [ "$LOGS_DIR" != "/var/log" ]; then
+          echo chown "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$LOGS_DIR"
+          chown "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$LOGS_DIR"
+        fi
+        if [ -d "$LOGS_DIR"/cassandra ]; then
+          echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$LOGS_DIR"/cassandra
+          chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$LOGS_DIR"/cassandra
+        fi
+        if [ -d "$LOGS_DIR"/hadoop ]; then
+          echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$LOGS_DIR"/hadoop
+          chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$LOGS_DIR"/hadoop
+        fi
+        if [ -d "$LOGS_DIR"/hive ]; then
+          echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$LOGS_DIR"/hive
+          chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$LOGS_DIR"/hive
+        fi
+        if [ -d "$LOGS_DIR"/pig ]; then
+          echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$LOGS_DIR"/pig
+          chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$LOGS_DIR"/pig
+        fi
+        if [ -d "$LOGS_DIR"/tomcat ]; then
+          echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$LOGS_DIR"/tomcat
+          chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$LOGS_DIR"/tomcat
+        fi
+        if [ -d "$LOGS_DIR"/spark ]; then
+          echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$LOGS_DIR"/spark
+          chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$LOGS_DIR"/spark
+        fi
+        if [ -d "$LOGS_DIR"/shark ]; then
+          echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$LOGS_DIR"/shark
+          chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$LOGS_DIR"/shark
+        fi
+      fi
+
+      # Fallback... just in case.
+      if [ -d "/var/lib/cassandra" ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "/var/lib/cassandra"
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "/var/lib/cassandra"
+        chmod -R 750 "/var/lib/cassandra"
+        chmod 751 "/var/lib/cassandra"
+      fi
+      if [ -d "/var/log/cassandra" ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "/var/log/cassandra"
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "/var/log/cassandra"
+      fi
+
+      # Special treatment for spark
+      if [ -d "/var/lib/spark" ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "/var/lib/spark"
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "/var/lib/spark"
+      fi
+
+      # explicit listing to avoid installer problems with wrong ownership
+      # of root dir and backups folder.
+      if [ -f "$INSTALL_DIR/agent.tar.gz" ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/agent.tar.gz
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/agent.tar.gz
+      fi
+      if [ -f "$INSTALL_DIR/LICENSE.txt" ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/LICENSE.txt
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/LICENSE.txt
+      fi
+      if [ -f "$INSTALL_DIR/NOTICE.txt" ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/NOTICE.txt
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/NOTICE.txt
+      fi
+      if [ -f "$INSTALL_DIR/README" ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/README
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/README
+      fi
+      if [ -f "$INSTALL_DIR/README.md" ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/README.md
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/README.md
+      fi
+      if [ -d "$INSTALL_DIR"/agent ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/agent
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/agent
+      fi
+      if [ -d "$INSTALL_DIR"/bin ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/bin
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/bin
+      fi
+      if [ -d "$INSTALL_DIR"/clients ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/clients
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/clients
+      fi
+      if [ -d "$INSTALL_DIR"/conf ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/conf
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/conf
+      fi
+      if [ -d "$INSTALL_DIR"/content ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/content
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/content
+      fi
+      if [ -d "$INSTALL_DIR"/Desktop ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/Desktop
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/Desktop
+      fi
+      if [ -d "$INSTALL_DIR"/demos ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/demos
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/demos
+      fi
+      if [ -d "$INSTALL_DIR"/doc ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/doc
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/doc
+      fi
+      if [ -d "$INSTALL_DIR"/failover ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/failover
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/failover
+      fi
+      if [ -d "$INSTALL_DIR"/interface ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/interface
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/interface
+      fi
+      if [ -d "$INSTALL_DIR"/javadoc ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/javadoc
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/javadoc
+      fi
+      if [ -d "$INSTALL_DIR"/lib ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/lib
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/lib
+      fi
+      if [ -d "$INSTALL_DIR"/resources ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/resources
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/resources
+      fi
+      if [ -d "$INSTALL_DIR"/spark ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/spark
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/spark
+      fi
+      if [ -d "$INSTALL_DIR"/src ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/src
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/src
+      fi
+      if [ -d "$INSTALL_DIR"/ssl ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/ssl
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/ssl
+      fi
+      if [ -d "$INSTALL_DIR"/tools ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/tools
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/tools
+      fi
+      if [ -d "$INSTALL_DIR"/tmp ]; then
+        echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/tmp
+        chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" "$INSTALL_DIR"/tmp
+      fi
+
+      if [ -f "$INSTALL_DIR"/resources/hadoop/native/Linux-amd64-64/bin/task-controller ]; then
+        chmod 4750 "$INSTALL_DIR"/resources/hadoop/native/Linux-amd64-64/bin/task-controller
+      fi
+      if [ -f "$INSTALL_DIR"/resources/hadoop/native/Linux-i386-32/bin/task-controller ]; then
+        chmod 4750 "$INSTALL_DIR"/resources/hadoop/native/Linux-i386-32/bin/task-controller
+      fi
+      if [ -f "$INSTALL_DIR"/resources/hadoop/native/Mac_OS_X-x86_64-64/bin/task-controller ]; then
+        chmod 4750 "$INSTALL_DIR"/resources/hadoop/native/Mac_OS_X-x86_64-64/bin/task-controller
+      fi
+    fi
+
+    if [ -d /etc/cassandra ]; then
+      echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" /etc/cassandra
+      chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" /etc/cassandra
+    fi
+
+    if [ -d /etc/dse ]; then
+      echo chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" /etc/dse
+      chown -R "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" /etc/dse
+    fi
+
+    if [ -f /etc/default/dse ]; then
+      echo chown "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" /etc/default/dse
+      chown "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" /etc/default/dse
+      echo chmod g+rw /etc/default/dse
+    fi
+
+    if [ -f /etc/default/cassandra ]; then
+      echo chown "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" /etc/default/cassandra
+      chown "$CASSANDRA_USER$CASSANDRA_GROUP_SEP$CASSANDRA_GROUP" /etc/default/cassandra
+    fi
+  fi
+fi
+exit 0

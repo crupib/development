@@ -1,0 +1,24 @@
+.portfolioDiv {
+       cursor: pointer;
+       text-decoration:underline;
+}
+
+.portfolioDiv:hover {
+    background-color:#99CCFF;
+}
+
+#chart_container {
+    padding: 20px 0;
+}
+
+#noborder {
+    border: none;
+}
+
+#elapsed-clock {
+    padding-top: 25px;
+}
+
+#status {
+    padding-top: 5px;
+}

@@ -1,0 +1,34 @@
+apply plugin: 'java'
+
+sourceCompatibility = 1.7
+version = '1.0'
+jar.baseName = 'InvertedIndex'
+
+
+jar {
+    destinationDir = projectDir
+    manifest {
+        attributes 'Implementation-Title': 'Inverted Index Trigger', 'Implementation-Version': version
+    }
+}
+
+dependencies {
+    if (parent) {
+        compile project(':dse-core')
+    } else {
+        compile fileTree(dir: '../../resources/cassandra/lib', include: '*.jar')
+        compile fileTree(dir: "/usr/share/dse/cassandra/lib", include: '*.jar')
+    }
+}
+
+clean {
+    delete jar.archiveName
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir 'src'
+        }
+    }
+}

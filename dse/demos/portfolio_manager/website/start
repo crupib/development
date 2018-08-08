@@ -1,0 +1,39 @@
+#!/bin/sh
+if [ -z "$BASH_VERSION" ]; then
+    bash "$0" "$@"
+    exit $?
+fi
+
+if [ -d "/etc/dse" ]; then
+    export CASSANDRA_CONF="/etc/dse/cassandra"
+    export DSE_CONF="/etc/dse"
+else
+    if [ "$1" != "" ]; then
+        DSE_HOME="$1"
+    else
+        DSE_HOME=`dirname $0`/../../..
+    fi
+    if [ -d "$DSE_HOME/resources" ]; then
+        export CASSANDRA_CONF="$DSE_HOME/resources/cassandra/conf"
+        export DSE_CONF="$DSE_HOME/resources/dse/conf"
+    else
+        echo "Cannot determine DSE_HOME, please set it manually to your DSE install directory, or"
+        echo "pass the location is as an argument."
+        exit -1
+    fi
+fi
+
+if [ "x$JETTY_HOME" = "x" ]; then
+    export JETTY_HOME="`dirname $0`"
+fi
+
+if [ ! -d "$JETTY_HOME/resources" ]; then
+    mkdir "$JETTY_HOME/resources"
+fi
+
+cp $DSE_CONF/dse.yaml $JETTY_HOME/resources
+
+
+cd "$(dirname $0)"
+
+java  -Ddse.client.configuration.impl=com.datastax.bdp.transport.client.HadoopBasedClientConfiguration -jar $JETTY_HOME/start.jar

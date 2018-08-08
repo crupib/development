@@ -1,0 +1,28 @@
+#!/bin/sh
+
+INSTALL_DIR="/usr/share/dse"
+OUTPUT_FILE="/usr/share/dse/logs/datastax-agent/output.log"
+if [ -f /etc/init.d/datastax-agent ]; then
+  if [ -x "`which invoke-rc.d 2>/dev/null`" ]; then
+    invoke-rc.d datastax-agent start || true
+  else
+    if [ -x /sbin/service ]; then
+      /sbin/service datastax-agent start || true
+    else
+      /etc/init.d/datastax-agent start || true
+    fi
+  fi
+else
+  if [ -f ~/Library/LaunchAgents/com.datastax.agent.plist ]; then
+    launchctl load ~/Library/LaunchAgents/com.datastax.agent.plist
+  else  
+    if [ -x "$INSTALL_DIR/bin/datastax-agent" ]; then
+      cd "$INSTALL_DIR"
+      "$INSTALL_DIR/bin/datastax-agent" $@ > "$OUTPUT_FILE" 2>&1
+    else
+      echo No start method found.
+      exit 1
+    fi
+  fi
+fi
+

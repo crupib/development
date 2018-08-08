@@ -1,0 +1,1 @@
+cqlsh `hostname -f` <verify_table.cql

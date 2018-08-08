@@ -1,0 +1,374 @@
+#!/bin/bash
+
+set -x
+
+INSTALL_DIR=$1
+PRODUCT_TYPE=$2
+DATA_DIR=$3
+COMMITLOG_DIR=$4
+SAVED_CACHES_DIR=$5
+LOGS_DIR=$6
+DESKTOP_DIR=$7
+FULL_UNINSTALL=$8
+INSTALL_TYPE=$9
+SYSTEM_INSTALL=${10}
+CASSANDRA_USER=${11}
+CASSANDRA_GROUP=${12}
+DISTRIBUTION=${13}
+DISTRIBUTION_VERSION=${14}
+IS_UPGRADE=${15}
+TOOLS_DIR=${16}
+SUDO_SCRIPT=${17}
+SUDO_COMMAND=${18}
+if [ "$DS_DO_TEST" = "" ]; then
+  DS_DO_TEST=${19}
+fi 
+
+# Internal variables
+APPLICATIONS_DIR=
+APPLICATIONS_FALLBACK_DIR=
+APP_EXT=
+HOME_DIR=$HOME
+AGENT_USER=cassandra
+AGENT_GROUP=cassandra
+
+# Defaults
+if [ "$INSTALL_DIR" = "" ]; then
+  if [ -d "/usr/share/dse" ]; then
+    INSTALL_DIR="/usr/share/dse"
+    if [ "$IS_UPGRADE" = "" ]; then
+      IS_UPGRADE="1"
+    fi
+  elif [ -d "/usr/share/cassandra" ]; then
+    INSTALL_DIR="/usr/share/cassandra"
+    if [ "$IS_UPGRADE" = "" ]; then
+      IS_UPGRADE="1"
+    fi
+  elif [ -f "./bin/nodetool" ]; then
+    INSTALL_DIR=$(pwd)
+    if [ "$IS_UPGRADE" = "" ]; then
+      IS_UPGRADE="1"
+    fi
+  elif [ -f "./nodetool" ]; then
+    OLD_PWD=$(pwd)
+    INSTALL_DIR=$(cd ..; pwd)
+    cd "$OLD_PWD"
+    if [ "$IS_UPGRADE" = "" ]; then
+      IS_UPGRADE="1"
+    fi
+  else
+    echo Unable to determine INSTALL_DIR. Please specify on the commandline
+    exit 1
+  fi
+fi
+if [ "$IS_UPGRADE" = "" ]; then
+  IS_UPGRADE="0"
+fi
+if [ "$IS_UPGRADE" = "yes" ]; then
+  IS_UPGRADE="1"
+fi
+if [ "$IS_UPGRADE" = "no" ]; then
+  IS_UPGRADE="0"
+fi
+if [ "$PRODUCT_TYPE" = "" ]; then
+  if [ -f /etc/init.d/dse -o -f "$INSTALL_DIR"/bin/dse ]; then
+    PRODUCT_TYPE="dse"
+  elif [ -f /etc/init.d/cassandra -o -f "$INSTALL_DIR"/bin/cassandra ]; then
+    PRODUCT_TYPE="dsc"
+  else
+    PRODUCT_TYPE="dse"
+  fi
+fi
+if [ "$DATA_DIR" = "" ]; then
+  DATA_DIR="$INSTALL_DIR"/data
+fi
+if [ "$COMMITLOG_DIR" = "" ]; then
+  COMMITLOG_DIR="$INSTALL_DIR"/commitlog
+fi
+if [ "$SAVED_CACHES_DIR" = "" ]; then
+  SAVED_CACHES_DIR="$INSTALL_DIR"/saved_caches
+fi
+if [ "$LOGS_DIR" = "" ]; then
+  LOGS_DIR="$INSTALL_DIR"/logs
+fi
+if [ "$FULL_UNINSTALL" = "" ]; then
+  FULL_UNINSTALL="0"
+fi
+if [ "$FULL_UNINSTALL" = "yes" ]; then
+  FULL_UNINSTALL="1"
+fi
+if [ "$FULL_UNINSTALL" = "no" ]; then
+  FULL_UNINSTALL="0"
+fi
+if [ "$SYSTEM_INSTALL" = "" ]; then
+  if [ -f /etc/init.d/dse -o -f /etc/init.d/cassandra ]; then
+    SYSTEM_INSTALL="services_and_utilities"
+  else
+    SYSTEM_INSTALL="no_services"
+  fi
+fi
+if [ "$SYSTEM_INSTALL" = "yes" ]; then
+  SYSTEM_INSTALL="services_and_utilities"
+fi
+if [ "$SYSTEM_INSTALL" = "no" ]; then
+  SYSTEM_INSTALL="no_services"
+fi
+if [ "$CASSANDRA_USER" = "" ]; then
+  CASSANDRA_USER="cassandra"
+fi
+if [ "$CASSANDRA_GROUP" = "" ]; then
+  CASSANDRA_GROUP="cassandra"
+fi
+if [ "$DISTRIBUTION" = "" ]; then
+  if [ -d /Applications ]; then
+    DISTRIBUTION="osx"
+  else
+    if [ -f /etc/redhat-release ]; then
+      grep CentOS /etc/redhat-release
+      if [ $? = 0 ]; then
+        DISTRIBUTION="centos"
+      else
+        grep RedHat /etc/redhat-release
+        if [ $? = 0 ]; then
+          DISTRIBUTION="centos"
+        fi
+      fi
+    fi
+  fi
+fi
+if [ "$DISTRIBUTION_VERSION" = "" ]; then
+  if [ "$DISTRIBUTION" = "osx" ]; then
+    DISTRIBUTION_VERSION=$(sw_vers | grep 'ProductVersion:' | grep -o '[0-9]*\.[0-9]*\.[0-9]*')
+  elif [ "$DISTRIBUTION" = "centos" ]; then
+    DISTRIBUTION_VERSION=$(grep -o '[0-9]*\.[0-9]*' /etc/redhat-release)
+  elif [ "$DISTRIBUTION" = "redhat" ]; then
+    DISTRIBUTION_VERSION=$(grep -o '[0-9]*\.[0-9]*' /etc/redhat-release)
+  elif [ "$DISTRIBUTION" = "debian" ]; then
+echo 2
+  elif [ "$DISTRIBUTION" = "suse" ]; then
+echo 2
+  elif [ "$DISTRIBUTION" = "fedora" ]; then
+echo 2
+  elif [ "$DISTRIBUTION" = "windows" ]; then
+echo 2
+  else
+    DISTRIBUTION_VERSION="unkown"
+  fi
+fi
+DISTRIBUTION_MAJOR_VERSION=$(echo $DISTRIBUTION_VERSION|sed -e 's/\.[0-9]*$//g')
+
+case $PRODUCT_TYPE in
+  dse)
+    echo enterprise standalone
+    APP_FOLDER_NAME="DataStax Enterprise"
+  ;;
+  dsemulti)
+    echo enterprise standalone with all packages
+    APP_FOLDER_NAME="DataStax Enterprise"
+  ;;
+  dsc)
+    echo community standalone
+    APP_FOLDER_NAME="DataStax Community"
+  ;;
+  opscenter)
+    echo opscenter standalone
+    APP_FOLDER_NAME="DataStax OpsCenter"
+  ;;
+  datastax-agent)
+    echo datastax agent standalone
+    APP_FOLDER_NAME="DataStax Agent"
+  ;;
+  devcenter)
+    echo devcenter standalone
+    APP_FOLDER_NAME="DataStax DevCenter"
+  ;;
+  *)
+    echo Unknown product type $PRODUCT_TYPE
+  ;;
+esac
+
+if [ "$DS_DO_TEST" = "1" ]; then
+  exit 0
+fi
+
+# Some special stuff to enable unit testing
+if [ "$DS_DO_TEST" != "" ]; then
+  APPLICATIONS_DIR="./Applications"
+  HOME_DIR="./Home"
+fi
+
+###############################
+# OS X
+###############################
+if [ "$DISTRIBUTION" = "osx" ]; then
+  echo OS X
+
+  if [ "$APPLICATIONS_DIR" = "" ]; then
+    APPLICATIONS_DIR="/Applications"
+    if [ -d "$HOME_DIR/Applications/$APP_FOLDER_NAME" ]; then
+      APPLICATIONS_DIR="$HOME_DIR/Applications"
+    fi
+    APPLICATIONS_FALLBACK_DIR="$HOME_DIR/Applications"
+  fi
+  APP_EXT=.app
+fi
+
+###############################
+# Linux
+###############################
+if [ "$DISTRIBUTION" != "osx" ]; then
+  echo Linux
+
+  if [ "$APPLICATIONS_DIR" = "" ]; then
+    APPLICATIONS_DIR="$HOME_DIR/Desktop"
+    APPLICATIONS_FALLBACK_DIR="$HOME_DIR/Desktop"
+  fi
+fi
+
+# Print config info
+echo "install_dir $INSTALL_DIR"
+echo "product_dir $PRODUCT_TYPE"
+echo "data_dir $DATA_DIR"
+echo "commitlog_dir $COMMITLOG_DIR"
+echo "saved_caches_dir $SAVED_CACHES_DIR"
+echo "logs_dir $LOGS_DIR"
+echo "install type: $INSTALL_TYPE"
+echo "system_install $SYSTEM_INSTALL"
+echo "full_uninstall $FULL_UNINSTALL"
+echo "user $CASSANDRA_USER"
+echo "group $CASSANDRA_GROUP"
+echo "dist $DISTRIBUTION"
+echo "dist_version $DISTRIBUTION_VERSION"
+echo "dist_major_version $DISTRIBUTION_MAJOR_VERSION"
+echo "is_upgrade $IS_UPGRADE"
+echo "sudo $SUDO_COMMAND"
+echo "sudo script $SUDO_SCRIPT"
+echo "applications dir $APPLICATIONS_DIR"
+echo "applications fallback dir $APPLICATIONS_FALLBACK_DIR"
+echo "application extension: $APP_EXT"
+echo "agent user: $AGENT_USER"
+echo "agent group: $AGENT_GROUP"
+echo "desktop dir: $DESKTOP_DIR"
+
+#!/bin/sh
+
+echo Running agent sudo post uninstall actions
+echo Arguments: $*
+echo
+env
+
+# Do a package uninstall on Linux
+if [ "$DISTRIBUTION" = "centos" -o "$DISTRIBUTION" = "redhat" ]; then
+  /bin/rpm -q datastax-agent
+  if [ $? -eq 0 ]; then
+    echo Uninstalling $INSTALL_DIR
+    if [ -f "$INSTALL_DIR"/NOT_USED.txt ]; then
+      rm -f "$INSTALL_DIR"/NOT_USED.txt
+    fi
+    if [ -f "$INSTALL_DIR"/conf/NOT_USED.txt ]; then
+      rm -f "$INSTALL_DIR"/conf/NOT_USED.txt
+    fi
+    /bin/rpm -e datastax-agent
+    EXIT_STATUS=$?
+    if [ "$FULL_UNINSTALL" = "1" ]; then
+      rm -rf "$INSTALL_DIR"/conf
+      rmdir "$INSTALL_DIR"
+    fi
+    exit $EXIT_STATUS
+  fi
+elif [ "$DISTRIBUTION" = "debian" -o "$DISTRIBUTION" = "ubuntu" ]; then
+  /usr/bin/dpkg -s datastax-agent | grep Status
+  if [ $? -eq 0 ]; then
+    echo Uninstalling $INSTALL_DIR
+    if [ -f "$INSTALL_DIR"/NOT_USED.txt ]; then
+      rm -f "$INSTALL_DIR"/NOT_USED.txt
+    fi
+    if [ -f "$INSTALL_DIR"/conf/NOT_USED.txt ]; then
+      rm -f "$INSTALL_DIR"/conf/NOT_USED.txt
+    fi
+    if [ "$FULL_UNINSTALL" = "1" ]; then
+      /usr/bin/dpkg -P datastax-agent
+      EXIT_STATUS=$?
+    else
+      /usr/bin/dpkg -r datastax-agent
+      EXIT_STATUS=$?
+    fi
+    exit $EXIT_STATUS
+  fi
+elif [ "$DISTRIBUTION" = "suse" ]; then
+  if [ -x /bin/rpm ]; then
+    /bin/rpm -q datastax-agent
+    if [ $? -eq 0 ]; then
+      echo Uninstalling $INSTALL_DIR
+      if [ -f "$INSTALL_DIR"/NOT_USED.txt ]; then
+        rm -f "$INSTALL_DIR"/NOT_USED.txt
+      fi
+      if [ -f "$INSTALL_DIR"/conf/NOT_USED.txt ]; then
+        rm -f "$INSTALL_DIR"/conf/NOT_USED.txt
+      fi
+      /bin/rpm -e datastax-agent
+      EXIT_STATUS=$?
+      if [ "$FULL_UNINSTALL" = "1" ]; then
+        rm -rf "$INSTALL_DIR"/conf
+        rmdir "$INSTALL_DIR"
+      fi
+      exit $EXIT_STATUS
+    fi
+  fi
+fi
+
+###############################
+# Linux
+###############################
+if [ "$DISTRIBUTION" != "osx" ]; then
+  if [ "$DISTRIBUTION" = "centos" -o "$DISTRIBUTION" = "redhat" ]; then
+    if [ -h /etc/init.d/datastax-agent ]; then
+      echo /sbin/chkconfig --del datastax-agent
+      /sbin/chkconfig --del datastax-agent
+    fi
+  fi
+  if [ -h /etc/init.d/datastax-agent ]; then
+    rm -f /etc/init.d/datastax-agent
+  fi
+fi
+
+if [ "$FULL_UNINSTALL" = "1" ]; then
+  echo Removing all data
+  if [ "$LOGS_DIR" != "" -a -d "$LOGS_DIR" -a ! -d "$LOGS_DIR"/cassandra -a "$LOGS_DIR" != /var/log ]; then
+    echo rm -rf "$LOGS_DIR"
+    rm -rf "$LOGS_DIR"
+  fi
+  if [ -d /var/run/datastax-agent ]; then
+    echo rm -rf /var/run/datastax-agent
+    rm -rf /var/run/datastax-agent
+  fi
+  if [ -d /etc/datastax-agent ]; then
+    echo rm -rf /etc/datastax-agent
+    rm -rf /etc/datastax-agent
+  fi
+  if [ -d /var/lib/datastax-agent ]; then
+    echo rm -rf /var/lib/datastax-agent
+    rm -rf /var/lib/datastax-agent
+  fi
+  if [ -h /etc/default/datastax-agent -o -e /etc/default/datastax-agent ]; then
+    echo rm /etc/default/datastax-agent
+    rm /etc/default/datastax-agent
+  fi
+  if [ "$INSTALL_DIR" != "" -a -d "$INSTALL_DIR/conf" ]; then
+    echo rm -rf "$INSTALL_DIR/conf"
+    rm -rf "$INSTALL_DIR/conf"
+  fi
+  if [ "$INSTALL_DIR" != "" -a -d "$INSTALL_DIR" ]; then
+    echo rmdir "$INSTALL_DIR"
+    rmdir "$INSTALL_DIR"
+  fi
+  if [ -f /etc/sudoers.d/opscenter-agent-sudoers ]; then
+    echo rm /etc/sudoers.d/opscenter-agent-sudoers
+    rm /etc/sudoers.d/opscenter-agent-sudoers
+  fi
+fi
+
+echo Running agent sudo post uninstall actions DONE
+
+exit 0
+

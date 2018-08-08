@@ -1,0 +1,2 @@
+SHARED_SEQUENTIAL
+GENERATE_INDEX_LATENCY_TEST|geonames-file=allCountries.txt|commands-count=50000|output=latency-test.txt

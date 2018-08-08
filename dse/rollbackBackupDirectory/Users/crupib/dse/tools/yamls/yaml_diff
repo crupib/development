@@ -1,0 +1,84 @@
+#!/usr/bin/env python
+
+import sys
+from utils import parse_yamls, read_yamls, analyze_differences, special_print
+
+
+def report(differences):
+    """
+    Format a report showing the changes, new settings, and missing settings
+    between two yamls.
+    """
+
+    # sort differences
+    change_locations = differences['changes'].keys()
+    change_locations.sort()
+    new_locations = differences['new_settings'].keys()
+    new_locations.sort()
+    missing_locations = differences['missing_settings'].keys()
+    missing_locations.sort()
+
+    # add spacing to report
+    print
+    print
+
+    differences_found = False
+
+    if change_locations:
+        differences_found = True
+        special_print(' CHANGES ', 'header')
+        special_print('=========')
+        for location in change_locations:
+            change = differences['changes'][location]
+
+            special_print('%s:' % change['key'])
+            special_print('- %s' % change['values']['orig'], 'subtraction')
+            special_print('+ %s' % change['values']['fresh'], 'addition')
+            print
+        print
+
+    if new_locations:
+        differences_found = True
+        special_print(' NEW SETTINGS ', 'header')
+        special_print('==============')
+        for location in new_locations:
+            setting = differences['new_settings'][location]
+
+            special_print('%s:' % setting['key'])
+            special_print('+ %s' % setting['value'], 'addition')
+            print
+        print
+
+    if missing_locations:
+        differences_found = True
+        special_print(' MISSING SETTINGS ', 'header')
+        special_print('==================')
+        print 'Note: Some of these settings may be deprecated, check the release notes.'
+        print
+        for location in missing_locations:
+            setting = differences['missing_settings'][location]
+
+            special_print('%s:' % setting['key'])
+            special_print('- %s' % setting['value'], 'subtraction')
+            print
+        print
+
+    if not differences_found:
+        print 'No differences found.'
+        print
+
+
+def main():
+    if len(sys.argv) < 3:
+        sys.exit('Usage: %s <cassandra.yaml.orig> <cassandra.yaml.fresh>\n' % __file__)
+
+    fresh_yaml, orig_yaml = parse_yamls(sys.argv[1], sys.argv[2])
+    fresh_text, orig_text = read_yamls(sys.argv[1], sys.argv[2])
+
+    differences = analyze_differences(fresh_yaml, orig_yaml, fresh_text, orig_text)
+
+    report(differences)
+
+
+if __name__ == "__main__":
+    main()

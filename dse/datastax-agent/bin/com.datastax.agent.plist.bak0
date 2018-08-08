@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.datastax.agent</string>
+	<key>RunAtLoad</key>
+	<true/>
+        <key>KeepAlive</key>
+        <false/>
+        <key>AbandonProcessGroup</key>
+        <false/>
+        <key>WorkingDirectory</key>
+        <string>/usr/share/dse</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/share/dse/bin/datastax-agent</string>
+                <string>-f</string>
+	</array>
+        <key>StandardErrorPath</key>
+        <string>/var/log/datastax-agent/agent_error.log</string>
+        <key>StandardOutPath</key>
+        <string>/var/log/datastax-agent/agent_output.log</string>
+</dict>
+</plist>

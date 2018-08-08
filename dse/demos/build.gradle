@@ -1,0 +1,22 @@
+subprojects {
+    apply plugin: 'java'
+    apply plugin: 'idea'
+
+    idea.module {
+        // put DEMO prefix in front to spot them distinguish them from other modules
+        name = "DEMO-$name"
+    }
+    sourceSets.main.java.srcDirs += ['src/java']
+
+    jar {
+        destinationDir = projectDir
+    }
+
+    clean.delete jar
+
+}
+
+task jar(overwrite: true)
+
+assemble.dependsOn subprojects*.assemble
+

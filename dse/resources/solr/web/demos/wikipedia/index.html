@@ -1,0 +1,64 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+  <title>DataStax Enterprise Search Wikipedia Demo</title>
+  <link rel="stylesheet" type="text/css" href="css/reuters.css" media="screen" />
+  <script type="text/javascript" src="js/jquery.min.js"></script>
+  <script type="text/javascript" src="lib/core/Core.js"></script>
+  <script type="text/javascript" src="lib/core/AbstractManager.js"></script>
+  <script type="text/javascript" src="lib/managers/Manager.jquery.js"></script>
+  <script type="text/javascript" src="lib/core/Parameter.js"></script>
+  <script type="text/javascript" src="lib/core/ParameterStore.js"></script>
+  <script type="text/javascript" src="lib/core/AbstractWidget.js"></script>
+  <script type="text/javascript" src="widgets/ResultWidget.js"></script>
+  <script type="text/javascript" src="lib/helpers/jquery/ajaxsolr.theme.js"></script>
+  <script type="text/javascript" src="js/jquery.livequery.js"></script>
+  <script type="text/javascript" src="lib/widgets/jquery/PagerWidget.js"></script>
+  <script type="text/javascript" src="lib/core/AbstractFacetWidget.js"></script>
+  <script type="text/javascript" src="widgets/TagcloudWidget.js"></script>
+  <script type="text/javascript" src="widgets/CurrentSearchWidget.js"></script>
+  <link rel="stylesheet" type="text/css" href="ext/jquery.autocomplete.css" media="screen" />
+  <script type="text/javascript" src="ext/jquery.autocomplete.js"></script>
+  <script type="text/javascript" src="widgets/TextWidget.js"></script>
+  <script type="text/javascript" src="lib/helpers/ajaxsolr.support.js"></script>
+  <script type="text/javascript" src="lib/helpers/ajaxsolr.theme.js"></script>
+  <script type="text/javascript" src="widgets/CountryCodeWidget.js"></script>
+  <script type="text/javascript" src="js/jquery-ui.min.js"></script>
+  <link rel="stylesheet" type="text/css" href="ext/smoothness/jquery-ui.css" media="screen" />
+  <link rel="stylesheet" type="text/css" href="ext/smoothness/ui.theme.css" media="screen" />
+  <script type="text/javascript" src="widgets/CalendarWidget.js"></script>
+  <script type="text/javascript" src="js/wikipedia.js"></script>
+  <script type="text/javascript" src="js/wikipediademo.theme.js"></script>
+  <script type="text/javascript" src="js/wikipediademo.js"></script>
+</head>
+<body>
+  <div id="wrap"> 
+    <div id="header">
+      <h1>DataStax Enterprise Search Wikipedia Demo</h1>
+      <h2>Browse Wikipedia Articles</h2>      
+    </div>
+
+    <div class="right">
+      <div id="result">
+        <div id="navigation">
+          <ul id="pager"></ul>
+          <div id="pager-header"></div>
+        </div>
+        <div id="docs"></div>
+      </div>
+    </div>
+
+    <div class="left">
+      <h2>Current Selection</h2>
+      <ul id="selection"></ul>
+
+      <h2>Search</h2>
+      <ul id="search">
+        <input type="text" id="query" name="query"/>
+      </ul>
+      <div class="clear"></div>
+    </div>
+    <div class="clear"></div>
+  </div>  
+</body>
+</html>

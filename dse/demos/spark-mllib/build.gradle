@@ -1,0 +1,51 @@
+apply plugin: 'scala'
+
+jar {
+    destinationDir = projectDir
+    baseName = 'NaiveBayesDemo'
+    manifest.attributes("Main-Class": "com.datastax.bdp.spark.mllib.demo.NaiveBayesDemo")
+}
+
+ext {
+    scoptVersion = '3.2.0'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compile "org.scala-lang:scala-compiler:${scalaVersion}"
+    compile "org.scala-lang:scala-library:${scalaVersion}"
+    compile "org.scala-lang:scala-reflect:${scalaVersion}"
+
+    compile "com.github.scopt:scopt_${scalaLibVersion}:${scoptVersion}"
+
+    if (parent) {
+        compile project(':dse-spark')
+    } else
+    {
+        ['../..',
+         '../../build',
+         '../../lib',
+         '../../resources/driver/lib',
+         '../../resources/cassandra/lib',
+         '../../resources/hadoop/lib',
+         '../../resources/spark/lib',
+         '/usr/share/dse',
+         '/usr/share/dse/driver/lib',
+         '/usr/share/dse/cassandra/lib',
+         '/usr/share/dse/hadoop/lib',
+         '/usr/share/dse/spark/lib'].each { dir ->
+            compile fileTree(dir: "$dir", include: '*.jar')
+        }
+    }
+}
+
+task run(type:Exec, dependsOn: assemble) {
+    commandLine "dse",  "spark-submit", jar.archiveName
+}
+
+clean.delete << jar.archiveName
+
+defaultTasks 'assemble' 

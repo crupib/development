@@ -1,0 +1,215 @@
+#!/bin/sh
+
+set -x
+
+if [ -f /tmp/dsupgrade_base.log ]; then
+  rm -f /tmp/dsupgrade_base.log
+fi
+
+{
+PRODUCT_TYPE=$1
+UNPACK_FOLDER=$2
+DISTRIBUTION=$3
+DISTRIBUTION_VERSION=$4
+CALL_DIR=$5
+CASS_CONF=$6
+DSE_DEFAULT_CONF=$7
+SUDO_COMMAND=$8
+
+if [ "$PRODUCT_TYPE" = "" ]; then
+  if [ -f /etc/init.d/dse ]; then
+    PRODUCT_TYPE="dse"
+  elif [ -f /etc/init.d/cassandra ]; then
+    PRODUCT_TYPE="dsc"
+  else
+    PRODUCT_TYPE="dse"
+  fi
+fi
+
+if [ "$DISTRIBUTION" = "" ]; then
+  if [ -d /Applications ]; then
+    DISTRIBUTION="osx"
+  else
+    if [ -f /etc/redhat-release ]; then
+      grep CentOS /etc/redhat-release
+      if [ $? = 0 ]; then
+        DISTRIBUTION="centos"
+      else
+        grep RedHat /etc/redhat-release
+        if [ $? = 0 ]; then
+          DISTRIBUTION="centos"
+        fi
+      fi
+    fi
+  fi
+fi
+if [ "$DISTRIBUTION_VERSION" = "" ]; then
+  if [ "$DISTRIBUTION" = "osx" ]; then
+    DISTRIBUTION_VERSION=$(sw_vers | grep 'ProductVersion:' | grep -o '[0-9]*\.[0-9]*\.[0-9]*')
+  elif [ "$DISTRIBUTION" = "centos" ]; then
+    DISTRIBUTION_VERSION=$(grep -o '[0-9]*\.[0-9]*' /etc/redhat-release)
+  elif [ "$DISTRIBUTION" = "redhat" ]; then
+    DISTRIBUTION_VERSION=$(grep -o '[0-9]*\.[0-9]*' /etc/redhat-release)
+  elif [ "$DISTRIBUTION" = "debian" ]; then
+echo 2
+  elif [ "$DISTRIBUTION" = "suse" ]; then
+echo 2
+  elif [ "$DISTRIBUTION" = "fedora" ]; then
+echo 2
+  elif [ "$DISTRIBUTION" = "windows" ]; then
+echo 2
+  else
+    DISTRIBUTION_VERSION="unkown"
+  fi
+fi
+DISTRIBUTION_MAJOR_VERSION=$(echo $DISTRIBUTION_VERSION|sed -e 's/\.[0-9]*$//g')
+
+echo Running base upgrade
+echo Arguments: "$*"
+echo
+env
+
+# print configuration
+echo "call dir: $CALL_DIR"
+echo "distribution: $DISTRIBUTION"
+echo "distribution major version: $DISTRIBUTION_MAJOR_VERSION"
+
+BACKUP_DIR=$UNPACK_FOLDER/dssystem
+if [ -d "$BACKUP_DIR" ]; then
+  echo rm -rf "$BACKUP_DIR"
+  rm -rf "$BACKUP_DIR"
+fi
+echo mkdir -p "$BACKUP_DIR"
+mkdir -p "$BACKUP_DIR"
+
+# Run sudo initializations
+if [ -f "$UNPACK_FOLDER"/tools/setup/upgrade_sudo_base ]; then
+  if [ "$SUDO_COMMAND" = "" ]; then
+    echo "$UNPACK_FOLDER"/tools/setup/upgrade_sudo_base "$@"
+    "$UNPACK_FOLDER"/tools/setup/upgrade_sudo_base "$@"
+  else
+    echo "$SUDO_COMMAND" "$UNPACK_FOLDER"/tools/setup/upgrade_sudo_base "$@"
+    "$SUDO_COMMAND" "$UNPACK_FOLDER"/tools/setup/upgrade_sudo_base "$@"
+  fi
+else
+  echo No sudo script
+fi
+
+# Create a property file with our current settings.
+if [ "$CASS_CONF" = "" ]; then
+  CASS_CONF="$BACKUP_DIR/dse/cassandra/cassandra.yaml"
+fi
+if [ -f "$CASS_CONF" ]; then
+  echo Extracting options from "$CASS_CONF"
+
+  grep '^num_tokens' "$CASS_CONF"
+  if [ $? -eq 0 ]; then
+    grep '^num_tokens:\s*1\s*$' "$CASS_CONF"
+    if [ $? -eq 0 ]; then
+      echo "enable_vnodes=0" >> "$UNPACK_FOLDER"/upgrade.property
+    else
+      echo "enable_vnodes=1" >> "$UNPACK_FOLDER"/upgrade.property
+    fi
+  else
+    echo "enable_vnodes=0" >> "$UNPACK_FOLDER"/upgrade.property
+  fi
+
+  VALUE=$(grep 'cluster_name:' "$CASS_CONF" | sed -e 's/cluster_name://g' | sed -e "s/'//g" | sed -e 's/ *$//g' | sed -e 's/^ *//g' | sed -e "s/'//g")
+  if [ $? -eq 0 ]; then
+    echo "ring_name=$VALUE" >> "$UNPACK_FOLDER"/upgrade.property
+  fi
+
+  VALUE=$(grep '^[ \t]*- seeds:' "$CASS_CONF" | sed -e 's/- seeds://g' | sed -e 's/ *$//g' | sed -e 's/^ *//g' | sed -e 's/"//g')
+  if [ $? -eq 0 ]; then
+    echo "seeds=$VALUE" >> "$UNPACK_FOLDER"/upgrade.property
+  fi
+
+  # This option is tricky. Currently we only allow one directory name through the installer. So 
+  # we only try to extract one here. If the installer doesn't find the unchanged default value
+  # in cassandra.yaml, it will not touch that option even if something else is specified. This
+  # needs to be improved at some point TODO.
+  VALUE=$(grep -A 1 'data_file_directories:' "$CASS_CONF" | tail -1 | head -1 | awk '{print $2}')
+  if [ $? -eq 0 ]; then
+    echo "cassandra_data_dir=$VALUE" >> "$UNPACK_FOLDER"/upgrade.property
+  fi
+
+  VALUE=$(grep '^commitlog_directory:' "$CASS_CONF" | sed -e 's/commitlog_directory://g' | sed -e 's/ *$//g' | sed -e 's/^ *//g')
+  if [ $? -eq 0 ]; then
+    echo "cassandra_commitlog_dir=$VALUE" >> "$UNPACK_FOLDER"/upgrade.property
+  fi
+
+  VALUE=$(grep '^saved_caches_directory:' "$CASS_CONF" | sed -e 's/saved_caches_directory://g' | sed -e 's/ *$//g' | sed -e 's/^ *//g')
+  if [ $? -eq 0 ]; then
+    echo "cassandra_saved_caches_dir=$VALUE" >> "$UNPACK_FOLDER"/upgrade.property
+  fi
+
+  VALUE=$(grep '^listen_address:' "$CASS_CONF" | sed -e 's/listen_address://g' | sed -e "s/ //g")
+  if [ $? -eq 0 ]; then
+    echo "interface=$VALUE" >> "$UNPACK_FOLDER"/upgrade.property
+    echo "listen_address=$VALUE" >> "$UNPACK_FOLDER"/upgrade.property
+    echo "opscenter_address=$VALUE" >> "$UNPACK_FOLDER"/upgrade.property
+  fi
+
+  VALUE=$(grep '^rpc_address:' "$CASS_CONF" | sed -e 's/rpc_address://g' | sed -e "s/ //g")
+  if [ $? -eq 0 ]; then
+    echo "rpc_address=$VALUE" >> "$UNPACK_FOLDER"/upgrade.property
+  fi
+
+  VALUE=$(grep '^rpc_port:' "$CASS_CONF" | sed -e 's/rpc_port://g' | sed -e "s/ //g")
+  if [ $? -eq 0 ]; then
+    echo "rpc_port=$VALUE" >> "$UNPACK_FOLDER"/upgrade.property
+  fi
+
+  VALUE=$(grep '^storage_port:' "$CASS_CONF" | sed -e 's/storage_port://g' | sed -e "s/ //g")
+  if [ $? -eq 0 ]; then
+    echo "storage_port=$VALUE" >> "$UNPACK_FOLDER"/upgrade.property
+  fi
+
+  VALUE=$(grep '^ssl_storage_port:' "$CASS_CONF" | sed -e 's/ssl_storage_port://g' | sed -e "s/ //g")
+  if [ $? -eq 0 ]; then
+    echo "ssl_storage_port=$VALUE" >> "$UNPACK_FOLDER"/upgrade.property
+  fi
+
+  # user and group parameters where not really changeable in the past. So not trying to get them. The
+  # new installer will handle those directly though it's saved options.
+fi
+
+if [ "$DSE_DEFAULT_CONF" = "" ]; then
+  DSE_DEFAULT_CONF="$BACKUP_DIR/dse.default"
+fi
+if [ -f "$DSE_DEFAULT_CONF" ]; then
+  echo Extracting options from "$DSE_DEFAULT_CONF"
+
+  USE_HADOOP=0
+  USE_SPARK=0
+  grep "^HADOOP_ENABLED=1" "$DSE_DEFAULT_CONF"
+  if [ $? -eq 0 ]; then
+    USE_HADOOP=1
+    echo "node_type=analytics" >> "$UNPACK_FOLDER"/upgrade.property
+  fi
+  
+  grep "^SPARK_ENABLED=1" "$DSE_DEFAULT_CONF"
+  if [ $? -eq 0 ]; then
+    USE_SPARK=1
+    echo "node_type=analytics" >> "$UNPACK_FOLDER"/upgrade.property
+  fi
+ 
+  if [ "$USE_HADOOP" = "1" ]; then 
+    echo "analytics_type=spark_internal" >> "$UNPACK_FOLDER"/upgrade.property
+  else
+    if [ "$USE_SPARK" = "1" ]; then 
+      echo "analytics_type=spark_only" >> "$UNPACK_FOLDER"/upgrade.property
+    fi
+  fi
+
+  grep "^SOLR_ENABLED=1" "$DSE_DEFAULT_CONF"
+  if [ $? -eq 0 ]; then
+    echo "node_type=search" >> "$UNPACK_FOLDER"/upgrade.property
+  fi
+fi
+
+echo Running base upgrade DONE
+exit 0
+} 2>&1 | tee -a /tmp/dsupgrade_base.log
+chmod a+w /tmp/dsupgrade_base.log
+

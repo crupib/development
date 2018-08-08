@@ -1,0 +1,380 @@
+#!/bin/sh
+
+if [ -f /tmpinstall_dependencies.log ]; then
+  rm -f /tmp/install_dependencies.log
+fi
+
+{
+PRODUCT_TYPE=$1
+DISTRIBUTION=$2
+DISTRIBUTION_VERSION=$3
+
+if [ "$DISTRIBUTION" = "" ]; then
+  if [ -d /Applications ]; then
+    DISTRIBUTION="osx"
+  else
+    if [ -f /etc/redhat-release ]; then
+      grep CentOS /etc/redhat-release
+      if [ $? = 0 ]; then
+        DISTRIBUTION="centos"
+      else
+        grep RedHat /etc/redhat-release
+        if [ $? = 0 ]; then
+          DISTRIBUTION="centos"
+        fi
+      fi
+    else
+      if [ -f /etc/os-release ]; then
+        grep -i suse /etc/os-release
+        if [ $? = 0 ]; then
+          DISTRIBUTION="suse"
+        fi
+      fi
+    fi
+  fi
+fi
+if [ "$DISTRIBUTION_VERSION" = "" ]; then
+  if [ "$DISTRIBUTION" = "osx" ]; then
+    DISTRIBUTION_VERSION=$(sw_vers | grep 'ProductVersion:' | grep -o '[0-9]*\.[0-9]*\.[0-9]*')
+  elif [ "$DISTRIBUTION" = "centos" ]; then
+    DISTRIBUTION_VERSION=$(grep -o '[0-9]*\.[0-9]*' /etc/redhat-release)
+  elif [ "$DISTRIBUTION" = "redhat" ]; then
+    DISTRIBUTION_VERSION=$(grep -o '[0-9]*\.[0-9]*' /etc/redhat-release)
+  elif [ "$DISTRIBUTION" = "debian" ]; then
+echo 2
+  elif [ "$DISTRIBUTION" = "suse" ]; then
+echo 2
+  elif [ "$DISTRIBUTION" = "fedora" ]; then
+echo 2
+  elif [ "$DISTRIBUTION" = "windows" ]; then
+echo 2
+  else
+    DISTRIBUTION_VERSION="unkown"
+  fi
+fi
+
+echo "dist $DISTRIBUTION"
+echo "dist_version $DISTRIBUTION_VERSION"
+
+echo Installing requirements for the system
+
+###############################
+# OS X
+###############################
+if [ "$DISTRIBUTION" = "osx" ]; then
+  echo OS X
+
+fi
+
+###############################
+# Linux
+###############################
+if [ "$DISTRIBUTION" != "osx" ]; then
+  echo Linux
+
+  if [ "$DISTRIBUTION" = "centos" -o "$DISTRIBUTION" = "redhat" -o "$DISTRIBUTION" = "fedora" ]; then
+    echo sudo rpm -Uvh http://dl.fedoraproject.org/pub/epel/5/i386/epel-release-5-4.noarch.rpm
+    rpm -Uvh http://dl.fedoraproject.org/pub/epel/5/i386/epel-release-5-4.noarch.rpm
+
+    # general
+    # needed to run spark, install opsecenter
+    echo =============================
+    echo yum -y install wget
+    yum -y install wget
+    if [ $? != 0 ]; then
+      echo "ERROR: Unable to install wget (used during install and runtime)"
+    fi
+    # installer needs this, but also running services
+    echo =============================
+    echo yum -y install sudo
+    yum -y install sudo
+    if [ $? != 0 ]; then
+      echo "ERROR: Unable to install sudo (used during install)"
+    fi
+    # used for some parsing and editing all over
+    echo =============================
+    echo yum -y install sed
+    yum -y install sed
+    if [ $? != 0 ]; then
+      echo "ERROR: Unable to install sed (highly recommended)"
+    fi
+    DISTRIBUTION_MAJOR_VERSION=$(echo $DISTRIBUTION_VERSION|sed -e 's/\.[0-9]*$//g')
+
+    # for ps command
+    echo =============================
+    echo yum -y install procps
+    yum -y install procps
+    if [ $? != 0 ]; then
+      echo "ERROR: Unable to install procps (highly recommended)"
+    fi
+
+    # for which command
+    echo =============================
+    echo yum -y install which
+    yum -y install which
+    if [ $? != 0 ]; then
+      echo "ERROR: Unable to install which (highly recommended)"
+    fi
+
+    # dsc/dse
+    if [ "$PRODUCT_TYPE" = "dsc" -o "$PRODUCT_TYPE" = "dse" ]; then
+      echo =============================
+      echo yum -y install ntp
+      yum -y install ntp
+      if [ $? != 0 ]; then
+        echo "WARNING: Unable to install ntp (highly recommended)"
+      fi
+
+      # pfc
+      echo =============================
+      echo yum -y install libyaml
+      yum -y install libyaml
+      if [ $? != 0 ]; then
+        echo "WARNING: Unable to install libyaml (not critical)"
+      fi
+
+      # opscenter agent
+      echo =============================
+      echo yum -y install sysstat
+      yum -y install sysstat
+      if [ $? != 0 ]; then
+        echo "ERROR: Unable to install sysstat (needed by datastax-agent)"
+      fi
+
+    fi
+
+    # opscenter
+    if [ "$PRODUCT_TYPE" = "opscenter" ]; then
+      echo =============================
+      echo yum -y install openssl
+      yum -y install openssl
+      if [ $? != 0 ]; then
+        echo "ERROR: Unable to install opennssl"
+      fi
+      if [ "$DISTRIBUTION_MAJOR_VERSION" = "5" ]; then
+        echo =============================
+        echo yum -y install openssl098
+        yum -y install openssl098
+        if [ $? != 0 ]; then
+          echo "ERROR: Unable to install opennssl098"
+        fi
+      fi
+      echo =============================
+      echo yum -y install pyOpenSSL
+      yum -y install pyOpenSSL
+      if [ $? != 0 ]; then
+        echo "ERROR: Unable to install pyOpenSSL"
+      fi
+      echo =============================
+      echo yum -y install python-devel
+      yum -y install python-devel
+      if [ $? != 0 ]; then
+        echo "ERROR: Unable to install python-devel"
+      fi
+      echo =============================
+      echo yum -y install libyaml-devel
+      yum -y install libyaml-devel
+      if [ $? != 0 ]; then
+        echo "ERROR: Unable to install libyaml-devel"
+      fi
+      echo =============================
+      echo yum -y install python-yaml
+      yum -y install python-yaml
+      if [ $? != 0 ]; then
+        echo "ERROR: Unable to install python-yaml"
+      fi
+      echo =============================
+      echo wget http://peak.telecommunity.com/dist/ez_setup.py
+      wget http://peak.telecommunity.com/dist/ez_setup.py
+      if [ $? != 0 ]; then
+        echo "ERROR: Unable to get http://peak.telecommunity.com/dist/ez_setup.py"
+      fi
+      echo python ez_setup.py
+      python ez_setup.py
+      if [ $? != 0 ]; then
+        echo "ERROR: Unable to install ez_setup.py"
+      fi
+      echo =============================
+      echo easy_install pip
+      easy_install pip
+      if [ $? != 0 ]; then
+        echo "ERROR: Unable to install pip"
+      fi
+    fi
+  elif [ "$DISTRIBUTION" = "oracle" ]; then
+    # general
+    DISTRIBUTION_MAJOR_VERSION=$(echo $DISTRIBUTION_VERSION|sed -e 's/\.[0-9]*$//g')
+
+    # dsc/dse
+    if [ "$PRODUCT_TYPE" = "dsc" -o "$PRODUCT_TYPE" = "dse" ]; then
+      echo cd /etc/yum.repos.d
+      cd /etc/yum.repos.d
+      echo wget http://public-yum.oracle.com/public-yum-ol6.repo
+      wget http://public-yum.oracle.com/public-yum-ol6.repo
+
+      echo =============================
+      echo yum install glibc.i686
+      yum install glibc.i686
+    fi
+  elif [ "$DISTRIBUTION" = "suse" ]; then
+    # general
+    DISTRIBUTION_MAJOR_VERSION=$(echo $DISTRIBUTION_VERSION|sed -e 's/\.[0-9]*$//g')
+
+    # opsecenter
+    if [ "$PRODUCT_TYPE" = "opscenter" ]; then
+      echo =============================
+      zypper --non-interactive --no-gpg-check in python-pip
+    fi
+
+    # dsc/dse
+    if [ "$PRODUCT_TYPE" = "dsc" -o "$PRODUCT_TYPE" = "dse" ]; then
+      echo =============================
+      zypper --non-interactive --no-gpg-check in sysstat
+    fi
+  elif [ "$DISTRIBUTION" = "ubuntu" -o "$DISTRIBUTION" = "debian" ]; then
+    echo updating metadata
+    apt-key update
+    apt-get update
+
+    # general
+    # needed to run spark, install opsecenter
+    dpkg -s wget | grep Status
+    if [ $? -ne 0 ]; then
+      echo =============================
+      echo apt-get -y install wget
+      apt-get -y install wget
+      if [ $? -ne 0 ]; then
+        echo "ERROR: Unable to install wget (used during install and runtime)"
+      fi
+    fi
+    # installer needs this, but also running services
+    dpkg -s sudo | grep Status
+    if [ $? -ne 0 ]; then
+      echo =============================
+      echo apt-get -y install sudo
+      apt-get -y install sudo
+      if [ $? -ne 0 ]; then
+        echo "ERROR: Unable to install sudo (used during install)"
+      fi
+    fi
+    # used for some parsing and editing all over
+    dpkg -s sed | grep Status
+    if [ $? -ne 0 ]; then
+      echo =============================
+      echo apt-get -y install sed
+      apt-get -y install sed
+      if [ $? -ne 0 ]; then
+        echo "ERROR: Unable to install sed (highly recommended)"
+      fi
+    fi
+    DISTRIBUTION_MAJOR_VERSION=$(echo $DISTRIBUTION_VERSION|sed -e 's/\.[0-9]*$//g')
+
+    # for which command
+    dpkg -s debianutils | grep Status
+    if [ $? -ne 0 ]; then
+      echo =============================
+      echo apt-get -y install debianutils
+      apt-get -y install debianutils
+      if [ $? -ne 0 ]; then
+        echo "ERROR: Unable to install debianutils (highly recommended)"
+      fi
+    fi
+ 
+    # for ps command
+    dpkg -s procps | grep Status
+    if [ $? -ne 0 ]; then
+      echo =============================
+      echo apt-get -y install procps
+      apt-get -y install procps
+      if [ $? -ne 0 ]; then
+        echo "ERROR: Unable to install procps (highly recommended)"
+      fi
+    fi
+ 
+    # dsc/dse
+    if [ "$PRODUCT_TYPE" = "dsc" -o "$PRODUCT_TYPE" = "dse" ]; then
+      dpkg -s ntp | grep Status
+      if [ $? -ne 0 ]; then
+        echo =============================
+        echo apt-get -y install ntp
+        apt-get -y install ntp
+        if [ $? -ne 0 ]; then
+          echo "WARNING: Unable to install ntp (highly recommended)"
+        fi
+      fi
+
+      # opscenter agent
+      dpkg -s sysstat | grep Status
+      if [ $? -ne 0 ]; then
+        echo =============================
+        echo apt-get -y install sysstat
+        apt-get -y install sysstat
+        if [ $? -ne 0 ]; then
+          echo "ERROR: Unable to install sysstat (needed by datastax-agent)"
+        fi
+      fi
+ 
+   fi
+
+    # opscenter
+    if [ "$PRODUCT_TYPE" = "opscenter" ]; then
+      dpkg -s openssl | grep Status
+      if [ $? -ne 0 ]; then
+        echo =============================
+        echo apt-get -y install openssl
+        apt-get -y install openssl
+        if [ $? -ne 0 ]; then
+          echo "ERROR: Unable to install opennssl"
+        fi
+      fi
+
+      dpkg -s python-openssl | grep Status
+      if [ $? -ne 0 ]; then
+        echo =============================
+        echo apt-get -y install python-openssl
+        apt-get -y install python-openssl
+        if [ $? -ne 0 ]; then
+          echo "ERROR: Unable to install python-opennssl"
+        fi
+      fi
+
+      dpkg -s python-pip | grep Status
+      if [ $? -ne 0 ]; then
+        echo =============================
+        echo apt-get -y install python-pip
+        apt-get -y install python-pip
+        if [ $? -ne 0 ]; then
+          echo "ERROR: Unable to install python-pip"
+        fi
+      fi
+
+      dpkg -s python-yaml | grep Status
+      if [ $? -ne 0 ]; then
+        echo =============================
+        echo apt-get -y install python-yaml
+        apt-get -y install python-yaml
+        if [ $? -ne 0 ]; then
+          echo "ERROR: Unable to install python-yaml"
+        fi
+      fi
+
+      # cause any deferred python module compilation (like for telephus)
+      # to be done now, before the initscript starts (this is from the
+      # opscenter setup code).
+      if which update-python-modules >/dev/null 2>&1; then
+        echo =============================
+        echo update-python-modules --post-install
+        update-python-modules --post-install
+        if [ $? -ne 0 ]; then
+          echo "ERROR: Unable to run update-python-modules --post-install"
+        fi
+      fi
+    fi
+  fi
+fi
+
+echo finished
+
+} 2>&1 | tee -a /tmp/install_dependencies.log
+chmod a+w /tmp/install_dependencies.log
+

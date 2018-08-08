@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# An example custom post-snapshot script.
+#
+# Post-snapshot scripts will not be called with any command line arguments,
+# but will receive the list of files included in the snapshot through stdin,
+# one file per line.
+#
+# The script should exit with a status of 0 if all operations complete
+# successfully. Otherwise, it should exit with a non-zero status to indicate
+# failure.
+
+
+# Each line from stdin contains the name of an SSTable file or a schema
+# definition file that was in the most recent snapshot; read them in and
+# back them up.
+while read sstable_name; do
+    # do something to backup the file
+    echo "$sstable_name" >> /tmp/sstables
+done

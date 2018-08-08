@@ -1,0 +1,528 @@
+#!/bin/sh
+if [ -z "$BASH_VERSION" ]; then
+    exec bash "$0" "$@"
+    exit 1  # Will only get here if exec itself fails to run
+fi
+
+# Absolute path to this script
+export DSE_SCRIPT="$(cd "`dirname "$0"`"; pwd)/dse"
+
+if [ -z "$DSE_ENV" ]; then
+    for include in "$HOME/.dse-env.sh" \
+                   "`dirname "$0"`/dse-env.sh" \
+                   "/etc/dse/dse-env.sh"; do
+        if [ -r "$include" ]; then
+            DSE_ENV="$include"
+            break
+        fi
+    done
+fi
+
+if [ -z "$DSE_ENV" ]; then
+    echo "DSE_ENV could not be determined."
+    exit 1
+elif [ -r "$DSE_ENV" ]; then
+    . "$DSE_ENV"
+else
+    echo "Location pointed by DSE_ENV not readable: $DSE_ENV"
+    exit 1
+fi
+
+export DSE_ENV_LOADED=1
+
+if [ -f "$DSE_HOME/resources/cassandra/conf/cassandra-env.sh" ]; then
+  CASSANDRA_ENV_FILE=$DSE_HOME/resources/cassandra/conf/cassandra-env.sh
+else
+  if [ -f "/etc/dse/cassandra/cassandra-env.sh" ]; then
+    CASSANDRA_ENV_FILE=/etc/dse/cassandra/cassandra-env.sh
+  else
+    CASSANDRA_ENV_FILE=cassandra-env.sh
+  fi
+fi
+if [ -f "$CASSANDRA_ENV_FILE" ]; then
+    while read line
+    do
+        if [[ $line == JMX_PORT* ]]; then
+            CASSANDRA_JMX_PORT=`echo $line |  cut -d'"' -f 2`
+        fi
+    done < $CASSANDRA_ENV_FILE
+else
+    echo "Can't find $CASSANDRA_ENV_FILE"
+    exit 1
+fi
+
+export CASSANDRA_ENV_LOADED=1
+
+# if JMX_PORT is not set in environment, we use the port from cassandra-env.sh
+if [ "x$JMX_PORT" = "x" ]; then
+    JMX_PORT=$CASSANDRA_JMX_PORT
+fi
+
+export JMX_PORT
+
+# DSP-3842
+HADOOP_OPTS="$HADOOP_OPTS $DSE_OPTS"
+
+BIN="`dirname $0`"
+
+if [ "$DSE_CONSOLE_USE_COLORS" = "true" ]; then
+    export DSE_OPTS="$DSE_OPTS -Ddse.console.useColors=true "
+fi
+
+set_common_HIVE_OPTS() {
+    export HADOOP_OPTS="$HADOOP_OPTS -Djava.library.path=$JAVA_LIBRARY_PATH"
+    export HADOOP_OPTS="$HADOOP_OPTS -Djava.system.class.loader=$DSE_CLIENT_CLASSLOADER"
+    export HADOOP_OPTS="$HADOOP_OPTS $JAVA_AGENT"
+    export HADOOP_OPTS="$HADOOP_OPTS -Dlogback.configurationFile=logback-tools.xml"
+    export HADOOP_OPTS="$HADOOP_OPTS -Ddse.client.configuration.impl=com.datastax.bdp.transport.client.HadoopBasedClientConfiguration"
+    export HADOOP_OPTS="$HADOOP_OPTS -Ddse.bin=$BIN"
+    export HADOOP_OPTS="$HADOOP_OPTS -Dhive.log.dir=$HIVE_LOG_ROOT/hive"
+
+    export DSE_CLASSPATH=`echo "$DSE_CLASSPATH" |sed 's/:[^:]*jcl-over-slf4j[^:]*//g'`
+    export HADOOP_CLASSPATH=`echo "$HADOOP_CLASSPATH" |sed 's/:[^:]*jcl-over-slf4j[^:]*//g'`
+    export HADOOP_CLASSPATH=$HADOOP_CLASSPATH:$HIVE_CLASSPATH:$MAHOUT_CLASSPATH
+}
+
+parseArgs() {
+case "$1" in
+    cassandra)
+        shift
+        set_credentials
+        case "`uname`" in
+            CYGWIN*)
+                JAVA_LIBRARY_PATH=`cygpath -p -w "$JAVA_LIBRARY_PATH"`
+            ;;
+        esac
+
+        for arg in "$@"
+        do
+            if [ "$arg" = "-t" ]
+            then
+                export HADOOP_ENABLED="1"
+            fi
+            if [ "$arg" = "-s" ]
+            then
+                export SOLR_ENABLED="1"
+            fi
+            if [ "$arg" = "-k" ]
+            then
+                export SPARK_ENABLED="1"
+                . "$SPARK_CONF_DIR"/spark-env.sh
+            fi
+            if [ "$arg" = "-c" ]
+            then
+                export CFS_ENABLED="1"
+            fi
+        done
+
+        export lower_heap_limit_in_mb="1024"
+        export higher_heap_limit_in_mb="8192"
+
+        if [ "$HADOOP_ENABLED" = "1" ]
+        then
+            export lower_heap_limit_in_mb="1536"
+            export higher_heap_limit_in_mb="10240"
+        fi
+        if [ "$SOLR_ENABLED" = "1" ]
+        then
+            export lower_heap_limit_in_mb="2048"
+            export higher_heap_limit_in_mb="14336"
+            export solr_home_property="-Dsolr.solr.home=solr/"
+        fi
+        if [ "$SPARK_ENABLED" = "1" ]
+        then
+            export lower_heap_limit_in_mb="1536"
+            export higher_heap_limit_in_mb="10240"
+        fi
+
+        exec "$CASSANDRA_BIN"/cassandra "$@" -Djava.library.path="$JAVA_LIBRARY_PATH" "$solr_home_property"
+        # Should not be reached
+        exit 1
+        ;;
+    cassandra-stop)
+        shift
+        set_credentials
+        STOP_SWITCH=$1
+        PID=""
+
+        case "$STOP_SWITCH" in
+            "-p")
+                shift
+                PID=$1
+                ;;
+        esac
+        if [ "x$PID" = "x" ]; then
+            PID=`ps -ww -ef | egrep java.*dse-[.0-9]*-\(SNAPSHOT\)*.jar | grep -v grep | awk '{print $2}' 2> /dev/null`;
+        fi
+        if [ "x$PID" = "x" ]; then
+            PID=`ps -edaf | egrep java.*dse-[.0-9]*-\(SNAPSHOT\)*.jar | awk '{print $2}' 2> /dev/null`;
+        fi
+        if [ "x$PID" = "x" ]; then
+            PID=`ps -ww -ef|grep 'resources/cassandra/conf'|grep java|grep -v grep|awk '{print $2}' 2> /dev/null`;
+        fi
+        if [ "x$PID" = "x" ]; then
+            PID=`ps -edaf|grep 'resources/cassandra/conf'|grep java|awk '{print $2}' 2> /dev/null`;
+        fi
+        if [ "x$PID" = "x" ]; then
+            echo "Unable to find DSE process, please use -p if you are sure it's running."
+            exit -1
+        else
+            NODETOOL_BIN=nodetool
+            if [ -x "$CASSANDRA_BIN"/nodetool ]; then
+                NODETOOL_BIN="$CASSANDRA_BIN"/nodetool
+            else
+                if [ -x /usr/bin/nodetool ]; then
+                    NODETOOL_BIN=/usr/bin/nodetool
+                else
+                    if [ -x $DSE_HOME/bin/nodetool ]; then
+                        NODETOOL_BIN=$DSE_HOME/bin/nodetool
+                    else
+                        if [ -x $BIN/nodetool ]; then
+                            NODETOOL_BIN=$BIN/nodetool
+                        fi
+                    fi
+                fi
+            fi
+            $NODETOOL_BIN $CASSANDRA_JMX_CREDENTIALS disablethrift
+            if [ $? = 0 ]; then
+                $NODETOOL_BIN $CASSANDRA_JMX_CREDENTIALS disablegossip
+                $NODETOOL_BIN $CASSANDRA_JMX_CREDENTIALS drain
+                kill $PID
+            fi
+            exit $?
+        fi
+        ;;
+    hadoop)
+        shift
+        set_credentials
+
+        HADOOP_CMD=$1
+        export HADOOP_OPTS="$HADOOP_OPTS -Djava.library.path=$JAVA_LIBRARY_PATH"
+        export HADOOP_OPTS="$HADOOP_OPTS -Djava.system.class.loader=$DSE_CLIENT_CLASSLOADER"
+        export HADOOP_OPTS="$HADOOP_OPTS $JAVA_AGENT"
+        export HADOOP_OPTS="$HADOOP_OPTS -Dlogback.configurationFile=logback-tools.xml"
+        export HADOOP_CLASSPATH=$HADOOP_CLASSPATH:$MAHOUT_CLASSPATH
+        export HADOOP_OPTS="$HADOOP_OPTS -Ddse.client.configuration.impl=com.datastax.bdp.transport.client.HadoopBasedClientConfiguration"
+
+        case "$HADOOP_CMD" in
+            job|queue|jar|pipes|mradmin|historyserver|distcp|archive)
+
+                if [ -z "$HADOOP_JT" ]; then
+                    set_HADOOP_JT
+                fi
+                if [ -z "$HADOOP_JT" ]; then
+                    echo "Unable to run $HADOOP_CMD: jobtracker not found"
+                    exit 2
+                fi
+
+                #set the JT param as a JVM arg
+                export HADOOP_OPTS="$HADOOP_OPTS -Ddse.job.tracker=$HADOOP_JT"
+
+                if [ "$HADOOP_CMD" = "jar" ]; then
+                    "$HADOOP_BIN/hadoop" "$HADOOP_CMD" "${@:2}"
+                else
+                    "$HADOOP_BIN/hadoop" "$HADOOP_CMD" $HADOOP_CREDENTIALS "${@:2}"
+                fi
+                exit $?
+            ;;
+            namenode|secondarynamenode|datanode|dfsadmin|fsck|balancer|jobtracker|tasktracker)
+                echo "Dse doesn't need to run 'hadoop $HADOOP_CMD'"
+                exit 2
+            ;;
+            "-h"|"")
+                # hadoop help is invoked w/ no command line args
+                "$HADOOP_BIN/hadoop"
+            ;;
+            *)
+                "$HADOOP_BIN/hadoop" "$HADOOP_CMD" $HADOOP_CREDENTIALS "${@:2}"
+                exit $?
+        esac
+        ;;
+    hive)
+        shift
+        set_credentials
+        set_common_HIVE_OPTS
+
+        if [ -z "$HADOOP_JT" ]; then
+            set_HADOOP_JT
+        fi
+        if [ -z "$HADOOP_JT" ]; then
+            echo "Unable to start hive: jobtracker not found"
+            exit 2
+        fi
+        export HADOOP_OPTS="$HADOOP_OPTS -Ddse.job.tracker=$HADOOP_JT"
+
+        "$HIVE_BIN/hive" "$@" $HIVE_CREDENTIALS
+        exit $?
+        ;;
+    beeline)
+        shift
+        set_credentials
+        set_common_HIVE_OPTS
+
+        "$HIVE_BIN/beeline" "$@"
+        exit $?
+        ;;
+    pig)
+        shift
+        set_credentials
+        if [ -z "$HADOOP_JT" ]; then
+            set_HADOOP_JT
+        fi
+        if [ -z "$HADOOP_JT" ]; then
+            echo "Unable to start pig: jobtracker not found"
+            exit 2
+        fi
+
+        if [ -z "$PIG_INITIAL_ADDRESS" ]; then
+            export PIG_INITIAL_ADDRESS="`echo $HADOOP_JT | sed s/:.*//`"
+        fi
+        if [ -z "$PIG_PARTITIONER" ]; then
+            export PIG_PARTITIONER="`get_partitioner`"
+        fi
+        if [ -z "$PIG_RPC_PORT" ]; then
+            export PIG_RPC_PORT="9160"
+        fi
+
+        export DSE_CLASSPATH=`echo "$DSE_CLASSPATH" |sed 's/:[^:]*jcl-over-slf4j[^:]*//g'`
+        export HADOOP_CLASSPATH=`echo "$HADOOP_CLASSPATH" |sed 's/:[^:]*jcl-over-slf4j[^:]*//g'`
+
+        export HADOOP_OPTS="$HADOOP_OPTS $JAVA_AGENT"
+        export PIG_CLASSPATH=$HADOOP_CLASSPATH:$PIG_CLASSPATH:$MAHOUT_CLASSPATH
+        export PIG_OPTS="$PIG_OPTS -Dmapred.job.tracker=$HADOOP_JT"
+        export PIG_OPTS="$PIG_OPTS -Dudf.import.list=org.apache.cassandra.hadoop.pig"
+        export PIG_OPTS="$PIG_OPTS -Djava.system.class.loader=$DSE_CLIENT_CLASSLOADER"
+        export PIG_OPTS="$PIG_OPTS -Djava.library.path=$JAVA_LIBRARY_PATH"
+        export PIG_OPTS="$PIG_OPTS -Dlogback.configurationFile=logback-tools.xml"
+        export PIG_OPTS="$PIG_OPTS -Ddse.client.configuration.impl=com.datastax.bdp.transport.client.HadoopBasedClientConfiguration"
+        export PIG_OPTS="$PIG_OPTS $JAVA_AGENT"
+
+        "$PIG_HOME/bin/pig" $HADOOP_CREDENTIALS "$@"
+        exit $?
+        ;;
+    sqoop)
+        shift
+        set_credentials
+        if [ -z "$HADOOP_JT" ]; then
+            set_HADOOP_JT
+        fi
+        if [ -z "$HADOOP_JT" ]; then
+            echo "Unable to start sqoop: jobtracker not found"
+            exit 2
+        fi
+        export HADOOP_CLASSPATH="$HIVE_CLASSPATH:$HADOOP_CLASSPATH"
+        export HADOOP_OPTS="$HADOOP_OPTS -Ddse.job.tracker=$HADOOP_JT"
+        export HADOOP_OPTS="$HADOOP_OPTS -Djava.system.class.loader=$DSE_CLIENT_CLASSLOADER"
+        export HADOOP_OPTS="$HADOOP_OPTS -Dlogback.configurationFile=logback-tools.xml"
+        export HADOOP_OPTS="$HADOOP_OPTS $JAVA_AGENT"
+        export HADOOP_OPTS="$HADOOP_OPTS -Ddse.client.configuration.impl=com.datastax.bdp.transport.client.HadoopBasedClientConfiguration"
+
+        "$SQOOP_HOME/bin/sqoop" "$@" $SQOOP_CREDENTIALS
+        exit $?
+        ;;
+    mahout)
+        shift
+        set_credentials
+        if [ -z "$HADOOP_JT" ]; then
+            set_HADOOP_JT
+        fi
+        if [ -z "$HADOOP_JT" ]; then
+            echo "Unable to start mahout: jobtracker not found"
+            exit 2
+        fi
+
+        #set the JT param as a JVM arg
+        export HADOOP_OPTS="$HADOOP_OPTS -Djava.library.path=$JAVA_LIBRARY_PATH"
+        export HADOOP_OPTS="$HADOOP_OPTS -Ddse.job.tracker=$HADOOP_JT"
+        export HADOOP_OPTS="$HADOOP_OPTS -Djava.system.class.loader=$DSE_CLIENT_CLASSLOADER"
+        export HADOOP_OPTS="$HADOOP_OPTS $JAVA_AGENT"
+        export HADOOP_OPTS="$HADOOP_OPTS -Dlogback.configurationFile=logback-tools.xml"
+        export HADOOP_OPTS="$HADOOP_OPTS -Ddse.client.configuration.impl=com.datastax.bdp.transport.client.HadoopBasedClientConfiguration"
+        echo "Running: $MAHOUT_BIN/mahout $@"
+        $MAHOUT_BIN/mahout "$@"
+        exit 0
+         ;;
+    spark)
+        shift
+        set_credentials
+        "$SPARK_BIN"/spark-shell "$@"
+        exit $?
+        ;;
+    spark-beeline)
+        shift
+        "$SPARK_BIN"/beeline "$@"
+        exit $?
+        ;;
+    spark-jobserver)
+        shift
+        case "$1" in
+            start)
+                shift
+                "$SPARK_JOBSERVER_HOME"/server_start.sh "$@"
+                exit $?
+                ;;
+            stop)
+                shift
+                "$SPARK_JOBSERVER_HOME"/server_stop.sh
+                exit $?
+                ;;
+            *)
+                echo "$0:"
+                echo "usage: spark-jobserver <command> [Spark Submit Options]"
+                echo ""
+                echo "Available commands:"
+                echo "  start                             Start Spark Jobserver"
+                echo "  stop                              Stops Spark Jobserver"
+                ;;
+        esac
+        ;;
+    spark-class)
+        shift
+        set_credentials
+        "$SPARK_BIN"/spark-class "$@"
+        exit $?
+        ;;
+
+    spark-submit)
+        shift
+        set_credentials
+        "$SPARK_BIN"/spark-submit "$@"
+        exit $?
+        ;;
+    spark-sql)
+        shift
+        set_credentials
+        "$SPARK_BIN"/spark-sql "$@"
+        exit $?
+        ;;
+    spark-classpath)
+        shift
+        echo "$(remove_duplicates "$DSE_JARS:$SPARK_LIB_CLASSPATH:$SPARK_CLIENT_CLASSPATH:$HADOOP_CLASSPATH:$DSE_CLASSPATH:$CASSANDRA_CLASSPATH")"
+        exit $?
+        ;;
+    start-spark-sql-thriftserver)
+        shift
+        set_credentials
+        : ${SPARK_LOG_DIR:=$HOME/spark-thrift-server}
+        export SPARK_LOG_DIR
+        "$SPARK_SBIN"/start-thriftserver.sh "$@"
+        exit $?
+        ;;
+    stop-spark-sql-thriftserver)
+        shift
+        : ${SPARK_LOG_DIR:=$HOME/spark-thrift-server}
+        export SPARK_LOG_DIR
+        "$SPARK_SBIN"/stop-thriftserver.sh "$@"
+        exit $?
+        ;;
+    pyspark)
+        shift
+        set_credentials
+        "$SPARK_BIN"/pyspark "$@"
+        exit $?
+        ;;
+    shark)
+	echo "Shark functionality has been removed from DSE. Consider migrating your queries to SparkSQL instead."
+	exit 1
+	;;
+    nodetool)
+        shift
+        set_credentials
+        # Nodetool needs the full set of DSE libs on the classpath
+        # as since 1.2.11 the configured snitch is loaded by a call
+        # to DatabaseDescriptor.init in describe_ring
+        CLASSPATH="$DSE_CLASSPATH":"$HADOOP_CLASSPATH":"$CASSANDRA_CLASSPATH"
+        if [ -x "$CASSANDRA_BIN"/nodetool ]; then
+            exec "$CASSANDRA_BIN"/nodetool $CASSANDRA_JMX_CREDENTIALS "$@"
+        elif [ -x /usr/bin/nodetool ]; then
+            exec /usr/bin/nodetool $CASSANDRA_JMX_CREDENTIALS "$@"
+        else
+            echo "Unable to locale nodetool in $CASSANDRA_BIN or /usr/bin"
+            exit 2
+        fi
+        exit $?
+        ;;
+    -v)
+        "$JAVA" -cp "$CLASSPATH" -Dlogback.configurationFile=logback-tools.xml com.datastax.bdp.tools.GetVersion
+        exit $?
+        ;;
+    -u)
+        shift
+        export dse_username="$1"
+        shift
+        parseArgs "$@"
+        ;;
+    -p)
+        shift
+        export dse_password="$1"
+        shift
+        parseArgs "$@"
+        ;;
+    -a)
+        shift
+        export dse_jmx_username="$1"
+        shift
+        parseArgs "$@"
+        ;;
+    -b)
+        shift
+        export dse_jmx_password="$1"
+        shift
+        parseArgs "$@"
+        ;;
+    hive-schema)
+        set_credentials
+        "$JAVA" -cp $CLASSPATH -Dlogback.configurationFile=logback-no-op.xml com.datastax.bdp.hadoop.hive.metastore.TableCreationQueryGenerator "$@"
+        exit $?
+        ;;
+    esri-import)
+        set_credentials
+        "$JAVA" -cp "$CLASSPATH" $DSE_OPTS  -Dlogback.configurationFile=logback-tools.xml org.apache.hadoop.hive.esri.EsriJsonFileImporter "$@"
+        exit $?
+        ;;
+    hive-metastore-migrate)
+        set_credentials
+        "$JAVA" -cp "$CLASSPATH" $DSE_OPTS -Dlogback.configurationFile=logback-tools.xml com.datastax.bdp.hadoop.hive.metastore.HiveMetastoreMigrateTool "$@"
+        exit $?
+        ;;
+    client-tool)
+        shift
+        set_credentials
+        "$BIN"/dse-client-tool "$@"
+        exit $?
+        ;;
+    *)
+        echo "$0:"
+        echo "usage: dse [-u <username> -p <password> -a <jmx_username> -b <jmx_password>] <command> [command-args]"
+        echo ""
+        echo "Available commands:"
+        echo "  -v                              print DSE version"
+        echo "  cassandra                       run DSE server"
+        echo "  cassandra-stop                  stop DSE server"
+        echo "  hadoop                          Hadoop command"
+        echo "  hive                            Hive command"
+        echo "  beeline                         Beeline command"
+        echo "  pig                             Pig command"
+        echo "  sqoop                           Sqoop command"
+        echo "  mahout                          Mahout command"
+        echo "  spark                           Spark shell"
+        echo "  spark-class                     Spark class"
+        echo "  spark-submit                    Submit Spark job"
+        echo "  spark-jobserver                 Spark Jobserver Command"
+        echo "  pyspark                         Spark Python shell"
+        echo "  spark-sql                       Spark SQL command line"
+        echo "  spark-beeline                   Beeline client from Spark"
+        echo "  start-spark-sql-thriftserver    Start Spark SQL Thrift server"
+        echo "  stop-spark-sql-thriftserver     Stop Spark SQL Thrift server"
+        echo "  hive-schema                     Hive schema command"
+        echo "  esri-import                     Esri import command"
+        echo "  hive-metastore-migrate          Migrate Hive metastore from one DSE version to another"
+        echo "  client-tool                     Runs a DSE client tool command"
+        echo ""
+        exit 1
+esac
+}
+
+parseArgs "$@"
+
+# vi:ai sw=4 ts=4 tw=0 et

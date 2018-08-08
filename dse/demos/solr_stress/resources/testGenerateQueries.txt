@@ -1,0 +1,2 @@
+SHARED_SEQUENTIAL
+GENERATE_QUERIES|fields=country,name,timezone,published|terms-limit=500|boolean-queries=850|term-queries=150|output=queries-cql.txt|api=CQL

@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+ Licensed to the Apache Software Foundation (ASF) under one or more
+ contributor license agreements.  See the NOTICE file distributed with
+ this work for additional information regarding copyright ownership.
+ The ASF licenses this file to You under the Apache License, Version 2.0
+ (the "License"); you may not use this file except in compliance with
+ the License.  You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+<web-app xmlns="http://java.sun.com/xml/ns/javaee"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://java.sun.com/xml/ns/javaee http://java.sun.com/xml/ns/javaee/web-app_2_5.xsd"
+         version="2.5"
+         metadata-complete="true"
+>
+
+
+  <!-- Uncomment if you are trying to use a Resin version before 3.0.19.
+    Their XML implementation isn't entirely compatible with Xerces.
+    Below are the implementations to use with Sun's JVM.
+  <system-property javax.xml.xpath.XPathFactory=
+             "com.sun.org.apache.xpath.internal.jaxp.XPathFactoryImpl"/>
+  <system-property javax.xml.parsers.DocumentBuilderFactory=
+             "com.sun.org.apache.xerces.internal.jaxp.DocumentBuilderFactoryImpl"/>
+  <system-property javax.xml.parsers.SAXParserFactory=
+             "com.sun.org.apache.xerces.internal.jaxp.SAXParserFactoryImpl"/>
+   -->
+
+  <!-- People who want to hardcode their "Solr Home" directly into the
+       WAR File can set the JNDI property here...
+   -->
+  <!--
+    <env-entry>
+       <env-entry-name>solr/home</env-entry-name>
+       <env-entry-value>/put/your/solr/home/here</env-entry-value>
+       <env-entry-type>java.lang.String</env-entry-type>
+    </env-entry>
+   -->
+   
+  <!-- Any path (name) registered in solrconfig.xml will be sent to that filter -->
+  <filter>
+    <filter-name>SolrRequestFilter</filter-name>
+    <filter-class>com.datastax.bdp.search.solr.servlet.CassandraDispatchFilter</filter-class>
+    <!-- If you are wiring Solr into a larger web application which controls
+         the web context root, you will probably want to mount Solr under
+         a path prefix (app.war with /app/solr mounted into it, for example).
+         You will need to put this prefix in front of the SolrDispatchFilter
+         url-pattern mapping too (/solr/*), and also on any paths for
+         legacy Solr servlet mappings you may be using.
+         For the Admin UI to work properly in a path-prefixed configuration,
+         the admin folder containing the resources needs to be under the app context root
+         named to match the path-prefix.  For example:
+
+            .war
+               xxx
+                 js
+                   main.js
+    -->
+    <!--
+    <init-param>
+      <param-name>path-prefix</param-name>
+      <param-value>/xxx</param-value>
+    </init-param>
+    -->
+  </filter>
+
+  <!-- DseAuthenticationFilter will perform appropriate type of authentication depending on
+       the authenticator type selected in cassandra.yaml. 
+       For AllowAllAuthenticator, doesn't request authentication.
+       For PasswordAuthenticator, requests HTTP Basic authentication.
+       For KerberosAuthenticator, requests SPNEGO authentication. -->
+  <filter>
+    <filter-name>AuthenticationFilter</filter-name>
+    <filter-class>com.datastax.bdp.search.solr.auth.DseAuthenticationFilter</filter-class>
+    <init-param>
+        <param-name>token.validity</param-name>
+        <param-value>3600</param-value>
+    </init-param>
+    <init-param>
+        <param-name>cookie.domain</param-name>
+        <param-value>.datastax.com</param-value>
+    </init-param>
+    <init-param>
+        <param-name>cookie.path</param-name>
+        <param-value>/</param-value>
+    </init-param>
+  </filter>
+
+  <filter-mapping>
+      <filter-name>AuthenticationFilter</filter-name>
+      <url-pattern>/*</url-pattern>
+  </filter-mapping>
+
+  <!-- Some POST requests need to be repeatable as data might get consumed. This filter provides such feature -->
+  <filter>
+    <filter-name>RepeatablePOSTQueryFilter</filter-name>
+    <filter-class>com.datastax.bdp.search.solr.RepeatablePOSTQueryFilter</filter-class>
+  </filter>
+
+  <filter-mapping>
+      <filter-name>RepeatablePOSTQueryFilter</filter-name>
+      <url-pattern>/*</url-pattern>
+  </filter-mapping>
+
+  <!-- Authorization filter checks if the user authenticated by the previous filter has permissions
+       to access requested Solr core -->
+  <filter>
+    <filter-name>AuthorizationFilter</filter-name>
+    <filter-class>com.datastax.bdp.search.solr.auth.CassandraAuthorizationFilter</filter-class>
+  </filter>
+
+  <filter-mapping>
+      <filter-name>AuthorizationFilter</filter-name>
+      <url-pattern>/*</url-pattern>
+  </filter-mapping>
+
+  <!-- Any path (name) registered in solrconfig.xml will be sent to that filter -->
+  
+  <!--  Enables audit logging of Solr HTTP requests. The audit logging config in 
+        DSE's log4j configuration file must also be enabled for logging to actually
+        occur, so having this always enabled does not impose significant overhead. 
+  -->  
+  <filter>
+    <filter-name>DseAuditLoggingFilter</filter-name>
+    <filter-class>com.datastax.bdp.cassandra.audit.SolrHttpAuditLogFilter</filter-class>
+  </filter>
+  
+  <filter-mapping>
+    <filter-name>DseAuditLoggingFilter</filter-name>
+    <url-pattern>/*</url-pattern>
+  </filter-mapping>
+
+  <filter-mapping>
+    <!--
+      NOTE: When using multicore, /admin JSP URLs with a core specified
+      such as /solr/coreName/admin/stats.jsp get forwarded by a
+      RequestDispatcher to /solr/admin/stats.jsp with the specified core
+      put into request scope keyed as "org.apache.solr.SolrCore".
+
+      It is unnecessary, and potentially problematic, to have the SolrDispatchFilter
+      configured to also filter on forwards.  Do not configure
+      this dispatcher as <dispatcher>FORWARD</dispatcher>.
+    -->
+    <filter-name>SolrRequestFilter</filter-name>
+    <url-pattern>/*</url-pattern>
+  </filter-mapping>
+  
+  <servlet>
+    <servlet-name>LoadAdminUI</servlet-name>
+    <servlet-class>org.apache.solr.servlet.LoadAdminUiServlet</servlet-class>
+  </servlet>
+  
+  <!-- Remove in Solr 5.0 -->
+  <!-- This sends SC_MOVED_PERMANENTLY (301) for resources that changed in 4.0 -->
+  <servlet>
+    <servlet-name>RedirectOldAdminUI</servlet-name>
+    <servlet-class>org.apache.solr.servlet.RedirectServlet</servlet-class>
+    <init-param>
+      <param-name>destination</param-name>
+      <param-value>${context}/#/</param-value>
+    </init-param>
+  </servlet>
+  
+  <servlet>
+    <servlet-name>RedirectOldZookeeper</servlet-name>
+    <servlet-class>org.apache.solr.servlet.RedirectServlet</servlet-class>
+    <init-param>
+      <param-name>destination</param-name>
+      <param-value>${context}/zookeeper</param-value>
+    </init-param>
+  </servlet>
+  
+  <servlet>
+    <servlet-name>RedirectLogging</servlet-name>
+    <servlet-class>org.apache.solr.servlet.RedirectServlet</servlet-class>
+    <init-param>
+      <param-name>destination</param-name>
+      <param-value>${context}/#/~logging</param-value>
+    </init-param>
+  </servlet>
+
+  <servlet>
+    <servlet-name>SolrRestApi</servlet-name>
+    <servlet-class>org.restlet.ext.servlet.ServerServlet</servlet-class>
+    <init-param>
+      <param-name>org.restlet.application</param-name>
+      <param-value>org.apache.solr.rest.SolrSchemaRestApi</param-value>
+    </init-param>
+  </servlet>
+
+  <servlet>
+    <servlet-name>SolrConfigRestApi</servlet-name>
+    <servlet-class>org.restlet.ext.servlet.ServerServlet</servlet-class>
+    <init-param>
+      <param-name>org.restlet.application</param-name>
+      <param-value>org.apache.solr.rest.SolrConfigRestApi</param-value>
+    </init-param>
+  </servlet>
+  
+  <servlet-mapping>
+    <servlet-name>RedirectOldAdminUI</servlet-name>
+    <url-pattern>/admin/</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>RedirectOldAdminUI</servlet-name>
+    <url-pattern>/admin</url-pattern>
+  </servlet-mapping>
+  
+  <servlet-mapping>
+    <servlet-name>LoadAdminUI</servlet-name>
+    <url-pattern>/admin.html</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>SolrRestApi</servlet-name>
+    <url-pattern>/schema/*</url-pattern>
+  </servlet-mapping>
+  
+  <servlet-mapping>
+    <servlet-name>SolrConfigRestApi</servlet-name>
+    <url-pattern>/config/*</url-pattern>
+  </servlet-mapping>
+  
+  <mime-mapping>
+    <extension>.xsl</extension>
+    <!-- per http://www.w3.org/TR/2006/PR-xslt20-20061121/ -->
+    <mime-type>application/xslt+xml</mime-type>
+  </mime-mapping>
+
+  <welcome-file-list>
+    <welcome-file>admin.html</welcome-file>
+  </welcome-file-list>
+
+</web-app>

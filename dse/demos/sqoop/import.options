@@ -1,0 +1,17 @@
+cql-import
+--table
+npa_nxx
+--cassandra-keyspace
+npa_nxx 
+--cassandra-table
+npa_nxx_data
+--cassandra-column-mapping
+npa:npa,nxx:nxx,latitude:lat,longitude:lon,state:state,city:city
+--connect
+jdbc:mysql://<mysql_host>/npa_nxx_demo
+--username
+<mysql_user> 
+--password
+<mysql_password> 
+--cassandra-host
+<cassandra_host>

@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# A script to enable custom behavior for stopping Cassandra or DSE.
+# This script should exit with a status of 0 if the operation is a
+# success, and a non-zero value otherwise.
+
+# To enable this script, rename this file to stop-cassandra and
+# make sure that it's executable.
+#
+# Note: for this script to run properly the user running the agent 
+# (cassandra by default) must have proper permissions to start
+# and stop the DSE/Cassandra process (sudo is acceptable if your
+# environment supports it).
+
+pkill -f CassandraDaemon
+exit $?

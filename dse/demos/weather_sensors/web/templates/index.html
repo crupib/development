@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}{% endblock %}
+
+{% block content %}
+    <div class="col-sm-offset-2 col-sm-9">
+        <p>Use the navbar to navigate throughout this demo.</p>
+        <br/>
+        <h3>Near-Real Time Reports</h3>
+        <h4>Cassandra Times Series &rarr; Hive &rarr; Cassandra &rarr; CQL3</h4>
+        <p>
+            These reports were generated, or imported, using Hive jobs that aggregated
+            historical time series data stored in Cassandra in 1-minute increments. The
+            Hive job then performed daily and monthly roll-ups of 1440 data points per day.
+
+            Each time a report is selected, the final query happens using the DataStax
+            Python-Driver for Apache Cassandra to read from the Cassandra tables that were
+            used to house the results of the aggregate Hive jobs run through DataStax Enterprise.
+
+            You will notice that the monthly reports are quicker to respond since the request only selects
+            12 data points a year as opposed to 365 data points per year that still need to be graphed.
+            However, running on a dedicated machine will increase throughput while running on even a small
+            cluster will increase throughput linearly.
+        </p>
+
+        <h3>Sample Live Queries</h3>
+        <h4>Cassandra Times Series &rarr; Hive &rarr; Cassandra &rarr; Hive</h4>
+        <p>
+            This page allows Hive queries to be run against either a Spark SQL Thriftserver or Hive (Hadoop)
+            server against data stored in Cassandra. The page comes with pre-selected queries to
+            get started, but should accept anything you throw at it. Feel free to tinker
+            around and construct your own queries.
+        </p>
+
+        <h3>Custom Live Queries</h3>
+        <h4>Cassandra Times Series &rarr; Hive &rarr; Cassandra &rarr; Hive</h4>
+        <p>
+            Similar to the Sample Live Queries page, this page allows custom queries to be run.
+            However, this page allows users to dynamically change Hive queries without requiring
+            any knowledge of writing Hive queries.
+        </p>
+
+        <h3>CFS Live Queries</h3>
+        <h4>Cassandra Times Series &rarr; Hive &rarr; Cassandra &rarr; Hive + Pre-Existing Hadoop Data</h4>
+        <p>
+            In some cases, businesses already own vast amounts of data in their own Hadoop clusters.
+            Using DataStax Enterprise's BYOH feature, DataStax Enterprise can easily pull in existing
+            data from a Hadoop instance and run Hive queries that will mix in newer Cassandra data as well.
+
+            This allows your business to focus on moving forward instead of the tedious process of undergoing
+            data migration to use the next big thing.
+
+            In order to showcase how you would craft a query to run against existing data, we've created a sample
+            query that runs against DataStax Enterprise's CFS for demonstration purposes.
+        </p>
+
+        <br/>
+        <br/>
+        <h4>Cassandra Times Series</h4>
+        <p>
+            The Cassandra Time Series data was generated with the DataStax Java Driver for Apache Cassandra.
+            The source can be found at demos/weather_sensors/src/com/datastax/dse/demos/weather. If you loaded
+            data via the COPY command through CQLsh, you loaded aggregated data that came from rolling up the
+            weather data, from minute increments, into daily and monthly increments using the aggregation Hive
+            script found at resources/aggregates.q.
+        </p>
+
+    </div>
+{% endblock %}

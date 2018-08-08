@@ -1,0 +1,116 @@
+#!/bin/sh
+
+export DSE_TOOL=1
+
+if [ -f /etc/default/dse ]; then
+  . /etc/default/dse
+fi
+
+# JMX Port passed via cmd line args (-j 9999 or --jmxport=9999)
+# should override the value from cassandra-env.sh
+ARGS=""
+while true 
+do
+  if [ ! $1 ]; then break; fi
+  case $1 in
+    -j)
+      JMX_PORT=$2
+      shift
+      ;;
+    --jmxport=*)
+      JMX_PORT=$(echo $1 | cut -d '=' -f 2)
+      ;;
+    -a)
+      dse_jmx_username=$2
+      shift
+      ;;
+    --jmxusername)
+      dse_jmx_username=$2
+      shift
+      ;;
+    --jmxusername=*)
+      dse_jmx_username=$(echo $1 | cut -d '=' -f 2)
+      ;;
+    -b)
+      dse_jmx_password=$2
+      shift
+      ;;
+    --jmxpassword)
+      dse_jmx_password=$2
+      shift
+      ;;
+    --jmxpassword=*)
+      dse_jmx_password=$(echo $1 | cut -d '=' -f 2)
+      ;;
+    *)
+      ARGS="$ARGS $1"
+      ;;
+  esac
+  shift
+done
+
+if [ "$DSE_ENV_LOADED" != 1 ]; then
+    if [ -z "$DSE_ENV" ]; then
+        for include in "$DSE_HOME"/bin/dse-env.sh \
+                       "$HOME/.dse-env.sh" \
+                       "`dirname "$0"`/dse-env.sh" \
+                       "/etc/dse/dse-env.sh"; do
+            if [ -r "$include" ]; then
+                DSE_ENV="$include"
+                break
+            fi
+        done
+    fi
+
+    if [ -z "$DSE_ENV" ]; then
+        echo "DSE_ENV could not be determined."
+        exit 1
+    elif [ -r "$DSE_ENV" ]; then
+        . "$DSE_ENV"
+    else
+        echo "Location pointed by DSE_ENV not readable: $DSE_ENV"
+        exit 1
+    fi
+else
+    #include the DSERC environment script (pulls in credentials for basic authentication)
+    #note that it would be better if the functions were all grouped into a single script
+    #that could get loaded by all other scripts
+    if [ -r "$DSE_HOME/bin/dserc-env.sh" ]; then
+        . "$DSE_HOME/bin/dserc-env.sh"
+    elif [ -r "$DSE_CONF/dserc-env.sh" ]; then
+        . "$DSE_CONF/dserc-env.sh"
+    else
+        echo "Location pointed to by DSE_HOME/bin/dserc-env.sh or DSE_CONF/bin/dserc-env.sh not readable"
+        exit 1
+    fi
+fi
+
+# Need Windows-style paths under cygwin
+case "`uname`" in
+    CYGWIN*)
+        CLASSPATH="`cygpath -p -w "$CLASSPATH"`"
+        CASSANDRA_CONF="`cygpath -p -w "$CASSANDRA_CONF"`"
+    ;;
+esac
+
+if [ "$CASSANDRA_ENV_LOADED" != 1 ]; then
+    # Run cassandra-env.sh to pick up JMX_PORT, but preserve
+    # $JVM_OPTS as we don't want to inherit C*'s heap settings etc
+    JVM_OPTS_SAVE=$JVM_OPTS
+    if [ -f "$CASSANDRA_CONF/cassandra-env.sh" ]; then
+        . "$CASSANDRA_CONF/cassandra-env.sh"
+    fi
+    JVM_OPTS=$JVM_OPTS_SAVE
+fi
+
+if [ -n "$DSE_SASL_PROTOCOL" ]; then
+    export DSE_OPTS="$DSE_OPTS -Ddse.sasl.protocol=$DSE_SASL_PROTOCOL"
+fi
+
+if [ -n "$DSE_LOGIN_CONFIG" ]; then
+    export DSE_OPTS="$DSE_OPTS -Djava.security.auth.login.config=$DSE_LOGIN_CONFIG"
+fi
+
+CP="$DSE_CLASSPATH:$CASSANDRA_CLASSPATH:$SOLR_CLASSPATH:$TOMCAT_CLASSPATH:$HADOOP_CLASSPATH:$PIG_CLASSPATH:$HIVE_CLASSPATH:$SPARK_LIB_CLASSPATH"
+
+"$JAVA" $JAVA_AGENT $JVM_OPTS $DSE_OPTS -cp "$CP" -Dstorage-config=$CASSANDRA_CONF -Dlogback.configurationFile=logback-tools.xml com.datastax.bdp.tools.DseTool $DSE_JMX_CREDENTIALS --jmxport=$JMX_PORT $ARGS

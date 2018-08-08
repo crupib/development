@@ -1,0 +1,51 @@
+Follow the steps to find the earthquake count for each county
+
+1. add the county and earthquake data into CFS
+   $DSE/bin/dse hadoop fs -mkdir /test/data/county
+   $DSE/bin/dse hadoop fs -mkdir /test/data/earthquake
+   $DSE/bin/dse hadoop fs -put resources/hive/spatial/data/counties-data/california-counties.json /test/data/county/.
+   $DSE/bin/dse hadoop fs -put resources/hive/spatial/data/earthquake-data/earthquakes.csv /test/data/earthquake/.
+   
+2. $DSE/bin/dse hive
+
+3. create database test;
+
+4. use test;
+
+5. import the spatical UDFs
+   source resources/hive/spatial/function-ddl.sql
+
+6. CREATE EXTERNAL TABLE IF NOT EXISTS earthquakes (earthquake_date STRING, latitude DOUBLE, longitude DOUBLE, magnitude DOUBLE)
+   ROW FORMAT DELIMITED FIELDS TERMINATED BY ','
+   LOCATION '/test/data/earthquake';
+   
+7. CREATE EXTERNAL TABLE IF NOT EXISTS counties (Area string, Perimeter string, State string, County string, Name string, BoundaryShape binary)                                         
+   ROW FORMAT SERDE 'com.esri.hadoop.hive.serde.JsonSerde'              
+   STORED AS INPUTFORMAT 'com.esri.json.hadoop.EnclosedJsonInputFormat'
+   OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
+   LOCATION '/test/data/county';
+   
+8. SELECT counties.name, count(*) cnt FROM counties
+   JOIN earthquakes
+   WHERE ST_Contains(counties.boundaryshape, ST_Point(earthquakes.longitude, earthquakes.latitude))
+   GROUP BY counties.name
+   ORDER BY cnt desc;
+   
+9. Result
+
+Kern  36
+San Bernardino  35
+Imperial    28
+Inyo    20
+Los Angeles 18
+Riverside   14
+Monterey    14
+Santa Clara 12
+Fresno  11
+San Benito  11
+San Diego   7
+Santa Cruz  5
+San Luis Obispo 3
+Ventura 3
+Orange  2
+San Mateo   1

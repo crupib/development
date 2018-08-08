@@ -1,0 +1,31 @@
+#!/bin/sh
+
+INSTALL_DIR="/usr/share/dse"
+OUTPUT_FILE="/usr/share/dse/logs/cassandra/output.log"
+if [ -x /etc/init.d/dse ]; then
+  echo Note that the server will start as whatever node type is
+  echo configured in /etc/default/dse.
+  if [ -x "$(which invoke-rc.d 2>/dev/null)" ]; then
+    invoke-rc.d dse start || true
+  else
+    if [ -x /sbin/service ]; then
+      /sbin/service dse start || true
+    else
+      /etc/init.d/dse start || true
+    fi
+  fi
+else
+  if [ -f "$HOME/Library/LaunchAgents/com.datastax.dse.plist" ]; then
+    echo Note that the server will start as whatever node type is
+    echo configured in ~/Library/LaunchAgents/com.datastax.dse.plist.
+    launchctl load "$HOME/Library/LaunchAgents/com.datastax.dse.plist"
+  else
+    if [ -x  "$INSTALL_DIR/bin/dse" ]; then
+      "$INSTALL_DIR/bin/dse" cassandra -t "$@" > "$OUTPUT_FILE" 2>&1
+    else
+      echo No start method found.
+      exit 1
+    fi
+  fi
+fi
+

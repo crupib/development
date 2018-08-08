@@ -1,0 +1,15 @@
+cql-export
+--table
+npa_nxx_extract
+--cassandra-keyspace
+npa_nxx 
+--cassandra-table
+npa_nxx_data
+--connect
+jdbc:mysql://<mysql_host>/npa_nxx_demo
+--username
+<mysql_username> 
+--password
+<mysql_password> 
+--cassandra-host
+<cassandr_host>

@@ -1,0 +1,34 @@
+<!--
+
+    Copyright DataStax, Inc.
+
+    Please see the included license file for details.
+
+-->
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>[%level] [%date{ISO8601}] [%logger]: %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Change to debug to see data pathway logging. -->
+    <logger name="com.datastax.bdp.spark.streaming.kafka" level="DEBUG" />
+    <logger name="com.datastax.spark" level="WARN" />
+    <logger name="kafka" level="INFO" />
+
+    <logger name="com.datastax.driver" level="ERROR" />
+    <logger name="org.apache.cassandra" level="ERROR" />
+    <logger name="org.apache.spark" level="ERROR" />
+    <logger name="org.eclipse.jetty" level="ERROR" />
+    <logger name="org.apache.spark.storage.BlockManager" level="ERROR" />
+    <logger name="org.apache.thrift" level="ERROR"/>
+    <logger name="org.apache.cassandra.db.SystemKeyspace" level="ERROR"/>
+    <logger name="org.apache.spark.storage.BlockManager" level="ERROR" />
+    <logger name="org.apache.hadoop" level="ERROR" />
+    <logger name="org.apache.zookeeper" level="ERROR" />
+
+    <root level="info">
+        <appender-ref ref="STDOUT"/>
+    </root>
+</configuration>

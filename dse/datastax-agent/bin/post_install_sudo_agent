@@ -1,0 +1,627 @@
+#!/bin/bash
+
+set -x
+
+INSTALL_DIR=$1
+PRODUCT_TYPE=$2
+DATA_DIR=$3
+COMMITLOG_DIR=$4
+SAVED_CACHES_DIR=$5
+LOGS_DIR=$6
+DESKTOP_DIR=$7
+FULL_UNINSTALL=$8
+INSTALL_TYPE=$9
+SYSTEM_INSTALL=${10}
+CASSANDRA_USER=${11}
+CASSANDRA_GROUP=${12}
+DISTRIBUTION=${13}
+DISTRIBUTION_VERSION=${14}
+IS_UPGRADE=${15}
+TOOLS_DIR=${16}
+SUDO_SCRIPT=${17}
+SUDO_COMMAND=${18}
+if [ "$DS_DO_TEST" = "" ]; then
+  DS_DO_TEST=${19}
+fi 
+
+# Internal variables
+APPLICATIONS_DIR=
+APPLICATIONS_FALLBACK_DIR=
+APP_EXT=
+HOME_DIR=$HOME
+AGENT_USER=cassandra
+AGENT_GROUP=cassandra
+
+# Defaults
+if [ "$INSTALL_DIR" = "" ]; then
+  if [ -d "/usr/share/dse" ]; then
+    INSTALL_DIR="/usr/share/dse"
+    if [ "$IS_UPGRADE" = "" ]; then
+      IS_UPGRADE="1"
+    fi
+  elif [ -d "/usr/share/cassandra" ]; then
+    INSTALL_DIR="/usr/share/cassandra"
+    if [ "$IS_UPGRADE" = "" ]; then
+      IS_UPGRADE="1"
+    fi
+  elif [ -f "./bin/nodetool" ]; then
+    INSTALL_DIR=$(pwd)
+    if [ "$IS_UPGRADE" = "" ]; then
+      IS_UPGRADE="1"
+    fi
+  elif [ -f "./nodetool" ]; then
+    OLD_PWD=$(pwd)
+    INSTALL_DIR=$(cd ..; pwd)
+    cd "$OLD_PWD"
+    if [ "$IS_UPGRADE" = "" ]; then
+      IS_UPGRADE="1"
+    fi
+  else
+    echo Unable to determine INSTALL_DIR. Please specify on the commandline
+    exit 1
+  fi
+fi
+if [ "$IS_UPGRADE" = "" ]; then
+  IS_UPGRADE="0"
+fi
+if [ "$IS_UPGRADE" = "yes" ]; then
+  IS_UPGRADE="1"
+fi
+if [ "$IS_UPGRADE" = "no" ]; then
+  IS_UPGRADE="0"
+fi
+if [ "$PRODUCT_TYPE" = "" ]; then
+  if [ -f /etc/init.d/dse -o -f "$INSTALL_DIR"/bin/dse ]; then
+    PRODUCT_TYPE="dse"
+  elif [ -f /etc/init.d/cassandra -o -f "$INSTALL_DIR"/bin/cassandra ]; then
+    PRODUCT_TYPE="dsc"
+  else
+    PRODUCT_TYPE="dse"
+  fi
+fi
+if [ "$DATA_DIR" = "" ]; then
+  DATA_DIR="$INSTALL_DIR"/data
+fi
+if [ "$COMMITLOG_DIR" = "" ]; then
+  COMMITLOG_DIR="$INSTALL_DIR"/commitlog
+fi
+if [ "$SAVED_CACHES_DIR" = "" ]; then
+  SAVED_CACHES_DIR="$INSTALL_DIR"/saved_caches
+fi
+if [ "$LOGS_DIR" = "" ]; then
+  LOGS_DIR="$INSTALL_DIR"/logs
+fi
+if [ "$FULL_UNINSTALL" = "" ]; then
+  FULL_UNINSTALL="0"
+fi
+if [ "$FULL_UNINSTALL" = "yes" ]; then
+  FULL_UNINSTALL="1"
+fi
+if [ "$FULL_UNINSTALL" = "no" ]; then
+  FULL_UNINSTALL="0"
+fi
+if [ "$SYSTEM_INSTALL" = "" ]; then
+  if [ -f /etc/init.d/dse -o -f /etc/init.d/cassandra ]; then
+    SYSTEM_INSTALL="services_and_utilities"
+  else
+    SYSTEM_INSTALL="no_services"
+  fi
+fi
+if [ "$SYSTEM_INSTALL" = "yes" ]; then
+  SYSTEM_INSTALL="services_and_utilities"
+fi
+if [ "$SYSTEM_INSTALL" = "no" ]; then
+  SYSTEM_INSTALL="no_services"
+fi
+if [ "$CASSANDRA_USER" = "" ]; then
+  CASSANDRA_USER="cassandra"
+fi
+if [ "$CASSANDRA_GROUP" = "" ]; then
+  CASSANDRA_GROUP="cassandra"
+fi
+if [ "$DISTRIBUTION" = "" ]; then
+  if [ -d /Applications ]; then
+    DISTRIBUTION="osx"
+  else
+    if [ -f /etc/redhat-release ]; then
+      grep CentOS /etc/redhat-release
+      if [ $? = 0 ]; then
+        DISTRIBUTION="centos"
+      else
+        grep RedHat /etc/redhat-release
+        if [ $? = 0 ]; then
+          DISTRIBUTION="centos"
+        fi
+      fi
+    fi
+  fi
+fi
+if [ "$DISTRIBUTION_VERSION" = "" ]; then
+  if [ "$DISTRIBUTION" = "osx" ]; then
+    DISTRIBUTION_VERSION=$(sw_vers | grep 'ProductVersion:' | grep -o '[0-9]*\.[0-9]*\.[0-9]*')
+  elif [ "$DISTRIBUTION" = "centos" ]; then
+    DISTRIBUTION_VERSION=$(grep -o '[0-9]*\.[0-9]*' /etc/redhat-release)
+  elif [ "$DISTRIBUTION" = "redhat" ]; then
+    DISTRIBUTION_VERSION=$(grep -o '[0-9]*\.[0-9]*' /etc/redhat-release)
+  elif [ "$DISTRIBUTION" = "debian" ]; then
+echo 2
+  elif [ "$DISTRIBUTION" = "suse" ]; then
+echo 2
+  elif [ "$DISTRIBUTION" = "fedora" ]; then
+echo 2
+  elif [ "$DISTRIBUTION" = "windows" ]; then
+echo 2
+  else
+    DISTRIBUTION_VERSION="unkown"
+  fi
+fi
+DISTRIBUTION_MAJOR_VERSION=$(echo $DISTRIBUTION_VERSION|sed -e 's/\.[0-9]*$//g')
+
+case $PRODUCT_TYPE in
+  dse)
+    echo enterprise standalone
+    APP_FOLDER_NAME="DataStax Enterprise"
+  ;;
+  dsemulti)
+    echo enterprise standalone with all packages
+    APP_FOLDER_NAME="DataStax Enterprise"
+  ;;
+  dsc)
+    echo community standalone
+    APP_FOLDER_NAME="DataStax Community"
+  ;;
+  opscenter)
+    echo opscenter standalone
+    APP_FOLDER_NAME="DataStax OpsCenter"
+  ;;
+  datastax-agent)
+    echo datastax agent standalone
+    APP_FOLDER_NAME="DataStax Agent"
+  ;;
+  devcenter)
+    echo devcenter standalone
+    APP_FOLDER_NAME="DataStax DevCenter"
+  ;;
+  *)
+    echo Unknown product type $PRODUCT_TYPE
+  ;;
+esac
+
+if [ "$DS_DO_TEST" = "1" ]; then
+  exit 0
+fi
+
+# Some special stuff to enable unit testing
+if [ "$DS_DO_TEST" != "" ]; then
+  APPLICATIONS_DIR="./Applications"
+  HOME_DIR="./Home"
+fi
+
+###############################
+# OS X
+###############################
+if [ "$DISTRIBUTION" = "osx" ]; then
+  echo OS X
+
+  if [ "$APPLICATIONS_DIR" = "" ]; then
+    APPLICATIONS_DIR="/Applications"
+    if [ -d "$HOME_DIR/Applications/$APP_FOLDER_NAME" ]; then
+      APPLICATIONS_DIR="$HOME_DIR/Applications"
+    fi
+    APPLICATIONS_FALLBACK_DIR="$HOME_DIR/Applications"
+  fi
+  APP_EXT=.app
+fi
+
+###############################
+# Linux
+###############################
+if [ "$DISTRIBUTION" != "osx" ]; then
+  echo Linux
+
+  if [ "$APPLICATIONS_DIR" = "" ]; then
+    APPLICATIONS_DIR="$HOME_DIR/Desktop"
+    APPLICATIONS_FALLBACK_DIR="$HOME_DIR/Desktop"
+  fi
+fi
+
+# Print config info
+echo "install_dir $INSTALL_DIR"
+echo "product_dir $PRODUCT_TYPE"
+echo "data_dir $DATA_DIR"
+echo "commitlog_dir $COMMITLOG_DIR"
+echo "saved_caches_dir $SAVED_CACHES_DIR"
+echo "logs_dir $LOGS_DIR"
+echo "install type: $INSTALL_TYPE"
+echo "system_install $SYSTEM_INSTALL"
+echo "full_uninstall $FULL_UNINSTALL"
+echo "user $CASSANDRA_USER"
+echo "group $CASSANDRA_GROUP"
+echo "dist $DISTRIBUTION"
+echo "dist_version $DISTRIBUTION_VERSION"
+echo "dist_major_version $DISTRIBUTION_MAJOR_VERSION"
+echo "is_upgrade $IS_UPGRADE"
+echo "sudo $SUDO_COMMAND"
+echo "sudo script $SUDO_SCRIPT"
+echo "applications dir $APPLICATIONS_DIR"
+echo "applications fallback dir $APPLICATIONS_FALLBACK_DIR"
+echo "application extension: $APP_EXT"
+echo "agent user: $AGENT_USER"
+echo "agent group: $AGENT_GROUP"
+echo "desktop dir: $DESKTOP_DIR"
+
+#!/bin/sh
+
+echo Running agent post install sudo actions
+echo Arguments: $*
+echo
+env
+
+# Do a package install on Linux
+if [ "$SYSTEM_INSTALL" != "no_services" ]; then
+  EXIT_STATUS=
+  if [ "$DISTRIBUTION" = "centos" -o "$DISTRIBUTION" = "redhat" ]; then
+    ls "$INSTALL_DIR"/datastax-agent*.rpm
+    if [ $? = 0 ]; then
+      echo attempting package install Centos
+
+      /bin/rpm -q datastax-agent
+      if [ $? -ne 0 ]; then
+        # removing old files (from a non package install)
+        echo removing old files
+        if [ -d /usr/share/datastax-agent/doc ]; then
+          mv -f /usr/share/datastax-agent "$INSTALL_DIR"
+        fi
+        mkdir -p "$INSTALL_DIR"/datastax-agent-old
+        if [ -f /etc/init.d/datastax-agent -o -h /etc/init.d/datastax-agent ]; then
+          mv /etc/init.d/datastax-agent "$INSTALL_DIR"/datastax-agent-old
+        fi
+        if [ -f /etc/sudoers.d/opscenter-agent-sudoers -o -h /etc/sudoers.d/opscenter-agent-sudoers ]; then
+          mv /etc/sudoers.d/opscenter-agent-sudoers "$INSTALL_DIR"/datastax-agent-old
+        fi
+        if [ -f /etc/datastax-agent/log4j.properties -o -h /etc/datastax-agent/log4j.properties ]; then
+          mv /etc/datastax-agent/log4j.properties "$INSTALL_DIR"/datastax-agent-old
+        fi
+        if [ -f /etc/datastax-agent/datastax-agent-env.sh -o -h /etc/datastax-agent/datastax-agent-env.sh ]; then
+          mv /etc/datastax-agent/datastax-agent-env.sh "$INSTALL_DIR"/datastax-agent-old
+        fi
+      fi
+
+      /bin/rpm -i "$INSTALL_DIR"/datastax-agent*.rpm
+      EXIT_STATUS=$?
+    fi
+  elif [ "$DISTRIBUTION" = "debian" -o "$DISTRIBUTION" = "ubuntu" ]; then
+    ls "$INSTALL_DIR"/datastax-agent*.deb
+    if [ $? = 0 ]; then
+      echo attempting package install Ubuntu
+
+      /usr/bin/dpkg -s datastax-agent | grep Status
+      if [ $? -ne 0 ]; then
+        # removing old files (from a non package install)
+        echo removing old files
+        if [ -d /usr/share/datastax-agent/doc ]; then
+          mv -f /usr/share/datastax-agent "$INSTALL_DIR"
+        fi
+        mkdir -p "$INSTALL_DIR"/datastax-agent-old
+        if [ -f /etc/init.d/datastax-agent -o -h /etc/init.d/datastax-agent ]; then
+          mv /etc/init.d/datastax-agent "$INSTALL_DIR"/datastax-agent-old
+        fi
+        if [ -f /etc/sudoers.d/opscenter-agent-sudoers -o -h /etc/sudoers.d/opscenter-agent-sudoers ]; then
+          mv /etc/sudoers.d/opscenter-agent-sudoers "$INSTALL_DIR"/datastax-agent-old
+        fi
+        if [ -f /etc/datastax-agent/log4j.properties -o -h /etc/datastax-agent/log4j.properties ]; then
+          mv /etc/datastax-agent/log4j.properties "$INSTALL_DIR"/datastax-agent-old
+        fi
+        if [ -f /etc/datastax-agent/datastax-agent-env.sh -o -h /etc/datastax-agent/datastax-agent-env.sh ]; then
+          mv /etc/datastax-agent/datastax-agent-env.sh "$INSTALL_DIR"/datastax-agent-old
+        fi
+      fi
+
+      /usr/bin/dpkg --force-confdef -i "$INSTALL_DIR"/datastax-agent*.deb
+      EXIT_STATUS=$?
+    fi
+  elif [ "$DISTRIBUTION" = "suse" ]; then
+    if [ -x /bin/rpm ]; then
+      # try installing with yum, otherwise fallback to below
+      ls "$INSTALL_DIR"/datastax-agent*.rpm
+      if [ $? = 0 ]; then
+        echo attempting package install SuSE
+
+        /bin/rpm -q datastax-agent
+        if [ $? -ne 0 ]; then
+          # removing old files (from a non package install)
+          echo removing old files
+          if [ -d /usr/share/datastax-agent/doc ]; then
+            mv -f /usr/share/datastax-agent "$INSTALL_DIR"
+          fi
+          mkdir -p "$INSTALL_DIR"/datastax-agent-old
+          if [ -f /etc/init.d/datastax-agent -o -h /etc/init.d/datastax-agent ]; then
+            mv /etc/init.d/datastax-agent "$INSTALL_DIR"/datastax-agent-old
+          fi
+          if [ -f /etc/sudoers.d/opscenter-agent-sudoers -o -h /etc/sudoers.d/opscenter-agent-sudoers ]; then
+            mv /etc/sudoers.d/opscenter-agent-sudoers "$INSTALL_DIR"/datastax-agent-old
+          fi
+          if [ -f /etc/datastax-agent/log4j.properties -o -h /etc/datastax-agent/log4j.properties ]; then
+            mv /etc/datastax-agent/log4j.properties "$INSTALL_DIR"/datastax-agent-old
+          fi
+          if [ -f /etc/datastax-agent/datastax-agent-env.sh -o -h /etc/datastax-agent/datastax-agent-env.sh ]; then
+            mv /etc/datastax-agent/datastax-agent-env.sh "$INSTALL_DIR"/datastax-agent-old
+          fi
+        fi
+
+        /bin/rpm -i "$INSTALL_DIR"/datastax-agent*.rpm
+        EXIT_STATUS=$?
+      fi
+    fi
+  fi
+  echo result $EXIT_STATUS
+  if [ "$EXIT_STATUS" != "" -a -e /etc/init.d/datastax-agent ]; then
+    # restore old config files
+    if [ -f "$INSTALL_DIR"/datastax-agent-old/opscenter-agent-sudoers ]; then
+      cp "$INSTALL_DIR"/datastax-agent-old/opscenter-agent-sudoers /etc/sudoers.d/opscenter-agent-sudoers
+      mv "$INSTALL_DIR"/datastax-agent-old/opscenter-agent-sudoers "$INSTALL_DIR"/datastax-agent-old/opscenter-agent-sudoers.restored
+    fi
+    if [ -f "$INSTALL_DIR"/datastax-agent/conf/log4j.properties ]; then
+      cp "$INSTALL_DIR"/datastax-agent/conf/log4j.properties /etc/datastax-agent/log4j.properties
+      mv "$INSTALL_DIR"/datastax-agent/conf/log4j.properties "$INSTALL_DIR"/datastax-agent/conf/log4j.properties.restored
+    fi
+    if [ -f "$INSTALL_DIR"/datastax-agent/conf/datastax-agent-env.sh ]; then
+      cp "$INSTALL_DIR"/datastax-agent/conf/datastax-agent-env.sh /etc/datastax-agent/datastax-agent-env.sh
+      mv "$INSTALL_DIR"/datastax-agent/conf/datastax-agent-env.sh "$INSTALL_DIR"/datastax-agent/conf/datastax-agent-env.sh.restored
+    fi
+
+    # Mark the old config folder as obsolete
+    if [ -d "$INSTALL_DIR"/conf ]; then
+      echo "The content in this folder is not used. The packages where" > "$INSTALL_DIR"/conf/NOT_USED.txt
+      echo "sucessfully installed." >> "$INSTALL_DIR"/conf/NOT_USED.txt
+    fi
+    exit $EXIT_STATUS
+  fi
+fi
+
+# Move old installer files out of the way if they exist
+if [ -f /etc/init.d/datastax-agent ]; then
+  echo mv /etc/init.d/datastax-agent "$BACKUP_DIR"/datastax-agent.init
+  mv /etc/init.d/datastax-agent "$BACKUP_DIR"/datastax-agent.init
+fi
+if [ -d /var/lib/datastax-agent ]; then
+  echo mv /var/lib/datastax-agent "$BACKUP_DIR"
+  mv /var/lib/datastax-agent "$BACKUP_DIR"
+fi
+
+# Create folders
+if [ "$LOGS_DIR" != "" -a ! -d "$LOGS_DIR" ]; then
+  echo mkdir -p "$LOGS_DIR"
+  mkdir -p "$LOGS_DIR"
+  if [ $? -ne 0 ]; then
+    echo Unable to create data folder "$LOGS_DIR"
+  fi
+fi
+
+###############################
+# Linux
+###############################
+if [ "$DISTRIBUTION" != "osx" ]; then
+  if [ "$SYSTEM_INSTALL" != "no_services" ]; then
+    AGENT_HOME_DIR="${INSTALL_DIR}"
+
+    if [ "$DISTRIBUTION" = "centos" -o "$DISTRIBUTION" = "redhat" ]; then
+      # opscenter-admin group used for cassandra files the agent needs
+      # access to
+      getent group ${AGENT_GROUP} >/dev/null || groupadd -r ${AGENT_GROUP}
+
+      # the cassandra data files will have group owner 'cassandra'
+      getent group ${CASSANDRA_GROUP} >/dev/null || groupadd -r ${CASSANDRA_GROUP}
+
+      # the group/user the agent will run as
+      getent group ${AGENT_USER} >/dev/null || groupadd -r ${AGENT_USER}
+      if ! getent passwd ${AGENT_USER} >/dev/null; then
+        echo adding user ${AGENT_USER}
+        useradd -d "${AGENT_HOME_DIR}" -g ${AGENT_USER} -M -r ${AGENT_USER}
+      else
+        changed_homedir="please"
+      fi
+    else
+      # opscenter-admin group used for cassandra files the agent needs
+      # access to
+      if ! getent group ${AGENT_GROUP} >/dev/null; then
+        addgroup --system ${AGENT_GROUP}
+      fi
+
+      # the cassandra data files will have group owner 'cassandra'
+      if ! getent group ${CASSANDRA_GROUP} >/dev/null; then
+        addgroup --system ${CASSANDRA_GROUP}
+      fi
+
+      # the group/user the agent will run as
+      if ! getent group ${AGENT_USER} >/dev/null; then
+        addgroup --system ${AGENT_USER}
+      fi
+      if ! getent passwd ${AGENT_USER} >/dev/null; then
+        echo adding user ${AGENT_USER}
+        adduser --quiet \
+                --system \
+                --ingroup ${AGENT_USER} \
+                --quiet \
+                --disabled-login \
+                --disabled-password \
+                --home "${AGENT_HOME_DIR}" \
+                --no-create-home \
+                -gecos "DataStax Agent" \
+                ${AGENT_USER}
+      else
+        changed_homedir="please"
+      fi
+    fi
+
+    if [ "${changed_homedir}" = "please" ]; then
+      # update pre-existing user's home directory
+      changed_homedir="no"
+      echo changing user ${AGENT_USER} home directory to ${AGENT_HOME_DIR}
+      for i in {1..12}; do
+        if usermod -d "${AGENT_HOME_DIR}" ${AGENT_USER} &>/dev/null; then
+          changed_homedir="yes"
+          break
+        else
+          echo "Sleeping for 5s to wait for user to logout"
+          sleep 5
+        fi
+      done
+
+      if [ "$changed_homedir" = "no" ]; then
+        echo "ERROR: Timed out waiting to finish setting user's default home directory"
+      fi
+    fi
+
+    # add ourselves to the 'cassandra' and 'opscenter-admin' groups
+    echo usermod -a -G ${CASSANDRA_GROUP},${AGENT_GROUP} ${AGENT_USER}
+    usermod -a -G ${CASSANDRA_GROUP},${AGENT_GROUP} ${AGENT_USER}
+
+    # make sure we own our own home directory
+    echo chmod g+rwX -R "${AGENT_HOME_DIR}"
+    chmod g+rwX -R "${AGENT_HOME_DIR}"
+    echo chown -R ${AGENT_USER}: "${AGENT_HOME_DIR}"
+    chown -R ${AGENT_USER}: "${AGENT_HOME_DIR}"
+
+    # make sure we own the log directory
+    echo chown -R ${AGENT_USER}: "$LOGS_DIR"
+    chown -R ${AGENT_USER}: "$LOGS_DIR"
+
+    # create folders and files
+    if [ ! -d "/etc/datastax-agent" ]; then
+      echo mkdir "/etc/datastax-agent"
+      mkdir "/etc/datastax-agent"
+    fi
+    if [ -d "/etc/datastax-agent" ]; then
+      echo ln -s "$INSTALL_DIR"/conf/log4j.properties "/etc/datastax-agent"
+      ln -s "$INSTALL_DIR"/conf/log4j.properties "/etc/datastax-agent"
+      echo ln -s "$INSTALL_DIR"/conf/datastax-agent-env.sh "/etc/datastax-agent"
+      ln -s "$INSTALL_DIR"/conf/datastax-agent-env.sh "/etc/datastax-agent"
+    fi
+
+    if [ ! -d "/var/lib/datastax-agent" ]; then
+      echo mkdir "/var/lib/datastax-agent"
+      mkdir "/var/lib/datastax-agent"
+    fi
+
+    if [ ! -d "/var/lib/datastax-agent/conf" ]; then
+      echo mkdir "/var/lib/datastax-agent/conf"
+      mkdir "/var/lib/datastax-agent/conf"
+    fi
+    if [ -d "/var/lib/datastax-agent/conf" ]; then
+      echo ln -s "$INSTALL_DIR"/conf/address.yaml "/var/lib/datastax-agent/conf"
+      ln -s "$INSTALL_DIR"/conf/address.yaml "/var/lib/datastax-agent/conf"
+    fi
+
+    if [ ! -d "/var/lib/datastax-agent/ssl" ]; then
+      echo mkdir "/var/lib/datastax-agent/ssl"
+      mkdir "/var/lib/datastax-agent/ssl"
+    fi
+    chown -R ${AGENT_USER}: /var/lib/datastax-agent
+
+    if [ ! -d "/etc/sudoers.d" ]; then
+      echo mkdir "/etc/sudoers.d"
+      mkdir "/etc/sudoers.d"
+    fi
+
+    # This is basically a package install
+    #echo touch /var/lib/datastax-agent/ispackage
+    #touch /var/lib/datastax-agent/ispackage
+
+    # If the legacy /etc/default/opscenter-agent exists, rename it
+    if [ -f /etc/default/opscenter-agent ]; then
+        echo mv /etc/default/opscenter-agent /etc/default/datastax-agent
+        mv /etc/default/opscenter-agent /etc/default/datastax-agent
+    fi
+
+    # if /etc/cassandra is owned by root or opscenter-admin, chgrp to opscenter-admin and
+    # add group write perms
+    if [ -d /etc/cassandra ]; then
+      if [[ "`stat -c %U /etc/cassandra 2> /dev/null`" =~ $groups_to_migrate && \
+            "`stat -c %G /etc/cassandra 2> /dev/null`" =~ $groups_to_migrate ]]; then
+        echo chgrp -R ${AGENT_GROUP} /etc/cassandra
+        chgrp -R ${AGENT_GROUP} /etc/cassandra
+        echo chmod g+rwX -R /etc/cassandra
+        chmod g+rwX -R /etc/cassandra
+      fi
+    fi
+
+    # if /etc/dse is owned by root or opscenter-admin, chgrp to opscenter-admin and
+    # add group write perms
+    if [ -d /etc/dse ]; then
+      if [[ "`stat -c %U /etc/dse 2> /dev/null`" =~ $groups_to_migrate && \
+           "`stat -c %G /etc/dse 2> /dev/null`" =~ $groups_to_migrate ]]; then
+        echo chgrp -R ${AGENT_GROUP} /etc/dse
+        chgrp -R ${AGENT_GROUP} /etc/dse
+        echo chmod g+rwX -R /etc/dse
+        chmod g+rwX -R /etc/dse
+      fi
+    fi
+
+    # if /etc/default/dse is owned by root or opscenter-admin, chgrp to opscenter-admin and
+    # add group write perms
+    if [ -h /etc/default/dse -o -f /etc/default/dse ]; then
+      if [[ "`stat -c %U /etc/default/dse 2> /dev/null`" =~ $groups_to_migrate && \
+            "`stat -c %G /etc/default/dse 2> /dev/null`" =~ $groups_to_migarate ]]; then
+        echo chgrp ${AGENT_GROUP} /etc/default/dse
+        chgrp ${AGENT_GROUP} /etc/default/dse
+        echo chmod g+rw /etc/default/dse
+        chmod g+rw /etc/default/dse
+      fi
+    fi
+
+    # Migrate address.yaml
+    if [ -f /var/lib/opscenter-agent/conf/address.yaml ]; then
+      if [ -f /var/lib/opscenter-agent/conf/address.yaml ]; then
+        if [ ! -f /var/lib/datastax-agent/conf/address.yaml ]; then
+          echo mv /var/lib/opscenter-agent/conf/address.yaml /var/lib/datastax-agent/conf/address.yaml
+          mv /var/lib/opscenter-agent/conf/address.yaml /var/lib/datastax-agent/conf/address.yaml
+        fi
+        echo rm -rf /var/lib/opscenter-agent/conf
+        rm -rf /var/lib/opscenter-agent/conf
+      fi
+    fi
+
+    # Check and fix the sudoers file if necessary
+    echo fix the sudoers file
+    TMP_SUDOERS=`mktemp`
+    chmod 0440 $TMP_SUDOERS
+    cp /etc/sudoers $TMP_SUDOERS
+    if [ ! "`grep "#includedir /etc/sudoers.d" $TMP_SUDOERS`" ]; then
+      echo "#includedir /etc/sudoers.d" >> $TMP_SUDOERS
+      visudo -q -c -f $TMP_SUDOERS
+      if [ $? = 0 ]; then
+        echo fix the sudoers file success
+        cp $TMP_SUDOERS /etc/sudoers
+      else
+        echo "WARNING: Unable to give appropriate sudo permissions to %{username} user."
+      fi
+    fi
+
+    if [ "$DISTRIBUTION" = "centos" -o "$DISTRIBUTION" = "redhat" ]; then
+      echo ln -s "$INSTALL_DIR"/bin/datastax-agent.init.redhat /etc/init.d/datastax-agent
+      ln -s "$INSTALL_DIR"/bin/datastax-agent.init.redhat /etc/init.d/datastax-agent
+      echo ln -s "$INSTALL_DIR"/bin/opscenter-agent-sudoers.redhat /etc/sudoers.d/opscenter-agent-sudoers
+      cp "$INSTALL_DIR"/bin/opscenter-agent-sudoers.redhat /etc/sudoers.d/opscenter-agent-sudoers
+
+      echo /sbin/chkconfig --add datastax-agent
+      /sbin/chkconfig --add datastax-agent
+    else
+      echo ln -s "$INSTALL_DIR"/bin/datastax-agent.init.debian /etc/init.d/datastax-agent
+      ln -s "$INSTALL_DIR"/bin/datastax-agent.init.debian /etc/init.d/datastax-agent
+      echo ln -s "$INSTALL_DIR"/bin/opscenter-agent-sudoers.debian /etc/sudoers.d/opscenter-agent-sudoers
+      cp "$INSTALL_DIR"/bin/opscenter-agent-sudoers.debian /etc/sudoers.d/opscenter-agent-sudoers
+
+      echo update-rc.d datastax-agent defaults
+      update-rc.d datastax-agent defaults
+    fi
+
+    # make sure sudoers file has the right permissions
+    echo chmod 0440 /etc/sudoers.d/opscenter-agent-sudoers
+    chmod 0440 /etc/sudoers.d/opscenter-agent-sudoers
+  fi
+fi
+
+echo Running agent sudo post install actions DONE
+exit 0
+

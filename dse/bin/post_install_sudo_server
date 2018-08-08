@@ -1,0 +1,761 @@
+#!/bin/bash
+
+set -x
+
+INSTALL_DIR=$1
+PRODUCT_TYPE=$2
+DATA_DIR=$3
+COMMITLOG_DIR=$4
+SAVED_CACHES_DIR=$5
+LOGS_DIR=$6
+DESKTOP_DIR=$7
+FULL_UNINSTALL=$8
+INSTALL_TYPE=$9
+SYSTEM_INSTALL=${10}
+CASSANDRA_USER=${11}
+CASSANDRA_GROUP=${12}
+DISTRIBUTION=${13}
+DISTRIBUTION_VERSION=${14}
+IS_UPGRADE=${15}
+TOOLS_DIR=${16}
+SUDO_SCRIPT=${17}
+SUDO_COMMAND=${18}
+if [ "$DS_DO_TEST" = "" ]; then
+  DS_DO_TEST=${19}
+fi 
+
+# Internal variables
+APPLICATIONS_DIR=
+APPLICATIONS_FALLBACK_DIR=
+APP_EXT=
+HOME_DIR=$HOME
+AGENT_USER=cassandra
+AGENT_GROUP=cassandra
+
+# Defaults
+if [ "$INSTALL_DIR" = "" ]; then
+  if [ -d "/usr/share/dse" ]; then
+    INSTALL_DIR="/usr/share/dse"
+    if [ "$IS_UPGRADE" = "" ]; then
+      IS_UPGRADE="1"
+    fi
+  elif [ -d "/usr/share/cassandra" ]; then
+    INSTALL_DIR="/usr/share/cassandra"
+    if [ "$IS_UPGRADE" = "" ]; then
+      IS_UPGRADE="1"
+    fi
+  elif [ -f "./bin/nodetool" ]; then
+    INSTALL_DIR=$(pwd)
+    if [ "$IS_UPGRADE" = "" ]; then
+      IS_UPGRADE="1"
+    fi
+  elif [ -f "./nodetool" ]; then
+    OLD_PWD=$(pwd)
+    INSTALL_DIR=$(cd ..; pwd)
+    cd "$OLD_PWD"
+    if [ "$IS_UPGRADE" = "" ]; then
+      IS_UPGRADE="1"
+    fi
+  else
+    echo Unable to determine INSTALL_DIR. Please specify on the commandline
+    exit 1
+  fi
+fi
+if [ "$IS_UPGRADE" = "" ]; then
+  IS_UPGRADE="0"
+fi
+if [ "$IS_UPGRADE" = "yes" ]; then
+  IS_UPGRADE="1"
+fi
+if [ "$IS_UPGRADE" = "no" ]; then
+  IS_UPGRADE="0"
+fi
+if [ "$PRODUCT_TYPE" = "" ]; then
+  if [ -f /etc/init.d/dse -o -f "$INSTALL_DIR"/bin/dse ]; then
+    PRODUCT_TYPE="dse"
+  elif [ -f /etc/init.d/cassandra -o -f "$INSTALL_DIR"/bin/cassandra ]; then
+    PRODUCT_TYPE="dsc"
+  else
+    PRODUCT_TYPE="dse"
+  fi
+fi
+if [ "$DATA_DIR" = "" ]; then
+  DATA_DIR="$INSTALL_DIR"/data
+fi
+if [ "$COMMITLOG_DIR" = "" ]; then
+  COMMITLOG_DIR="$INSTALL_DIR"/commitlog
+fi
+if [ "$SAVED_CACHES_DIR" = "" ]; then
+  SAVED_CACHES_DIR="$INSTALL_DIR"/saved_caches
+fi
+if [ "$LOGS_DIR" = "" ]; then
+  LOGS_DIR="$INSTALL_DIR"/logs
+fi
+if [ "$FULL_UNINSTALL" = "" ]; then
+  FULL_UNINSTALL="0"
+fi
+if [ "$FULL_UNINSTALL" = "yes" ]; then
+  FULL_UNINSTALL="1"
+fi
+if [ "$FULL_UNINSTALL" = "no" ]; then
+  FULL_UNINSTALL="0"
+fi
+if [ "$SYSTEM_INSTALL" = "" ]; then
+  if [ -f /etc/init.d/dse -o -f /etc/init.d/cassandra ]; then
+    SYSTEM_INSTALL="services_and_utilities"
+  else
+    SYSTEM_INSTALL="no_services"
+  fi
+fi
+if [ "$SYSTEM_INSTALL" = "yes" ]; then
+  SYSTEM_INSTALL="services_and_utilities"
+fi
+if [ "$SYSTEM_INSTALL" = "no" ]; then
+  SYSTEM_INSTALL="no_services"
+fi
+if [ "$CASSANDRA_USER" = "" ]; then
+  CASSANDRA_USER="cassandra"
+fi
+if [ "$CASSANDRA_GROUP" = "" ]; then
+  CASSANDRA_GROUP="cassandra"
+fi
+if [ "$DISTRIBUTION" = "" ]; then
+  if [ -d /Applications ]; then
+    DISTRIBUTION="osx"
+  else
+    if [ -f /etc/redhat-release ]; then
+      grep CentOS /etc/redhat-release
+      if [ $? = 0 ]; then
+        DISTRIBUTION="centos"
+      else
+        grep RedHat /etc/redhat-release
+        if [ $? = 0 ]; then
+          DISTRIBUTION="centos"
+        fi
+      fi
+    fi
+  fi
+fi
+if [ "$DISTRIBUTION_VERSION" = "" ]; then
+  if [ "$DISTRIBUTION" = "osx" ]; then
+    DISTRIBUTION_VERSION=$(sw_vers | grep 'ProductVersion:' | grep -o '[0-9]*\.[0-9]*\.[0-9]*')
+  elif [ "$DISTRIBUTION" = "centos" ]; then
+    DISTRIBUTION_VERSION=$(grep -o '[0-9]*\.[0-9]*' /etc/redhat-release)
+  elif [ "$DISTRIBUTION" = "redhat" ]; then
+    DISTRIBUTION_VERSION=$(grep -o '[0-9]*\.[0-9]*' /etc/redhat-release)
+  elif [ "$DISTRIBUTION" = "debian" ]; then
+echo 2
+  elif [ "$DISTRIBUTION" = "suse" ]; then
+echo 2
+  elif [ "$DISTRIBUTION" = "fedora" ]; then
+echo 2
+  elif [ "$DISTRIBUTION" = "windows" ]; then
+echo 2
+  else
+    DISTRIBUTION_VERSION="unkown"
+  fi
+fi
+DISTRIBUTION_MAJOR_VERSION=$(echo $DISTRIBUTION_VERSION|sed -e 's/\.[0-9]*$//g')
+
+case $PRODUCT_TYPE in
+  dse)
+    echo enterprise standalone
+    APP_FOLDER_NAME="DataStax Enterprise"
+  ;;
+  dsemulti)
+    echo enterprise standalone with all packages
+    APP_FOLDER_NAME="DataStax Enterprise"
+  ;;
+  dsc)
+    echo community standalone
+    APP_FOLDER_NAME="DataStax Community"
+  ;;
+  opscenter)
+    echo opscenter standalone
+    APP_FOLDER_NAME="DataStax OpsCenter"
+  ;;
+  datastax-agent)
+    echo datastax agent standalone
+    APP_FOLDER_NAME="DataStax Agent"
+  ;;
+  devcenter)
+    echo devcenter standalone
+    APP_FOLDER_NAME="DataStax DevCenter"
+  ;;
+  *)
+    echo Unknown product type $PRODUCT_TYPE
+  ;;
+esac
+
+if [ "$DS_DO_TEST" = "1" ]; then
+  exit 0
+fi
+
+# Some special stuff to enable unit testing
+if [ "$DS_DO_TEST" != "" ]; then
+  APPLICATIONS_DIR="./Applications"
+  HOME_DIR="./Home"
+fi
+
+###############################
+# OS X
+###############################
+if [ "$DISTRIBUTION" = "osx" ]; then
+  echo OS X
+
+  if [ "$APPLICATIONS_DIR" = "" ]; then
+    APPLICATIONS_DIR="/Applications"
+    if [ -d "$HOME_DIR/Applications/$APP_FOLDER_NAME" ]; then
+      APPLICATIONS_DIR="$HOME_DIR/Applications"
+    fi
+    APPLICATIONS_FALLBACK_DIR="$HOME_DIR/Applications"
+  fi
+  APP_EXT=.app
+fi
+
+###############################
+# Linux
+###############################
+if [ "$DISTRIBUTION" != "osx" ]; then
+  echo Linux
+
+  if [ "$APPLICATIONS_DIR" = "" ]; then
+    APPLICATIONS_DIR="$HOME_DIR/Desktop"
+    APPLICATIONS_FALLBACK_DIR="$HOME_DIR/Desktop"
+  fi
+fi
+
+# Print config info
+echo "install_dir $INSTALL_DIR"
+echo "product_dir $PRODUCT_TYPE"
+echo "data_dir $DATA_DIR"
+echo "commitlog_dir $COMMITLOG_DIR"
+echo "saved_caches_dir $SAVED_CACHES_DIR"
+echo "logs_dir $LOGS_DIR"
+echo "install type: $INSTALL_TYPE"
+echo "system_install $SYSTEM_INSTALL"
+echo "full_uninstall $FULL_UNINSTALL"
+echo "user $CASSANDRA_USER"
+echo "group $CASSANDRA_GROUP"
+echo "dist $DISTRIBUTION"
+echo "dist_version $DISTRIBUTION_VERSION"
+echo "dist_major_version $DISTRIBUTION_MAJOR_VERSION"
+echo "is_upgrade $IS_UPGRADE"
+echo "sudo $SUDO_COMMAND"
+echo "sudo script $SUDO_SCRIPT"
+echo "applications dir $APPLICATIONS_DIR"
+echo "applications fallback dir $APPLICATIONS_FALLBACK_DIR"
+echo "application extension: $APP_EXT"
+echo "agent user: $AGENT_USER"
+echo "agent group: $AGENT_GROUP"
+echo "desktop dir: $DESKTOP_DIR"
+
+#!/bin/sh
+
+echo Running server post install sudo actions
+echo Arguments: "$*"
+echo
+env
+
+# Create folders
+if [ ! -d "$DATA_DIR" ]; then
+  echo mkdir -p "$DATA_DIR"
+  mkdir -p "$DATA_DIR"
+  if [ $? -ne 0 ]; then
+    echo Unable to create data folder "$DATA_DIR"
+  fi
+fi
+if [ ! -d "$COMMITLOG_DIR" ]; then
+  echo mkdir -p "$COMMITLOG_DIR"
+  mkdir -p "$COMMITLOG_DIR"
+  if [ $? -ne 0 ]; then
+    echo Unable to create data folder "$COMMITLOG_DIR"
+  fi
+fi
+if [ ! -d "$SAVED_CACHES_DIR" ]; then
+  echo mkdir -p "$SAVED_CACHES_DIR"
+  mkdir -p "$SAVED_CACHES_DIR"
+  if [ $? -ne 0 ]; then
+    echo Unable to create data folder "$SAVED_CACHES_DIR"
+  fi
+fi
+if [ ! -d "$LOGS_DIR" ]; then
+  echo mkdir -p "$LOGS_DIR"
+  mkdir -p "$LOGS_DIR"
+  if [ $? -ne 0 ]; then
+    echo Unable to create data folder "$LOGS_DIR"
+  fi
+fi
+if [ ! -d "$LOGS_DIR"/cassandra ]; then
+  echo mkdir -p "$LOGS_DIR"/cassandra
+  mkdir -p "$LOGS_DIR"/cassandra
+  if [ $? -ne 0 ]; then
+    echo Unable to create data folder "$LOGS_DIR"/cassandra
+  fi
+fi
+if [ -d "$INSTALL_DIR"/resources/hadoop ]; then
+  if [ ! -d "$LOGS_DIR"/hadoop ]; then
+    echo mkdir -p "$LOGS_DIR"/hadoop
+    mkdir -p "$LOGS_DIR"/hadoop
+    if [ $? -ne 0 ]; then
+      echo Unable to create data folder "$LOGS_DIR"/hadoop
+    fi
+  fi
+fi
+if [ -d "$INSTALL_DIR"/resources/hive ]; then
+  if [ ! -d "$LOGS_DIR"/hive ]; then
+    echo mkdir -p "$LOGS_DIR"/hive
+    mkdir -p "$LOGS_DIR"/hive
+    if [ $? -ne 0 ]; then
+      echo Unable to create data folder "$LOGS_DIR"/hive
+    fi
+  fi
+fi
+if [ -d "$INSTALL_DIR"/resources/pig ]; then
+  if [ ! -d "$LOGS_DIR"/pig ]; then
+    echo mkdir -p "$LOGS_DIR"/pig
+    mkdir -p "$LOGS_DIR"/pig
+    if [ $? -ne 0 ]; then
+      echo Unable to create data folder "$LOGS_DIR"/pig
+    fi
+  fi
+fi
+if [ -d "$INSTALL_DIR"/resources/spark ]; then
+  if [ ! -d "$LOGS_DIR"/spark ]; then
+    echo mkdir -p "$LOGS_DIR"/spark
+    mkdir -p "$LOGS_DIR"/spark
+    if [ $? -ne 0 ]; then
+      echo Unable to create data folder "$LOGS_DIR"/spark
+    fi
+  fi
+  echo mkdir -p /var/log/spark
+  mkdir -p /var/log/spark
+  if [ $? -ne 0 ]; then
+    echo Unable to create data folder /var/log/spark
+  fi
+  echo mkdir -p /var/lib/spark/rdd
+  mkdir -p /var/lib/spark/rdd
+  if [ $? -ne 0 ]; then
+    echo Unable to create data folder /var/lib/spark/rdd
+  fi
+  echo mkdir -p /var/lib/spark/work
+  mkdir -p /var/lib/spark/work
+  if [ $? -ne 0 ]; then
+    echo Unable to create data folder /var/lib/spark/work
+  fi
+  echo mkdir -p /var/lib/spark/worker
+  mkdir -p /var/lib/spark/worker
+  if [ $? -ne 0 ]; then
+    echo Unable to create data folder /var/lib/spark/worker
+  fi
+fi
+if [ -d "$INSTALL_DIR"/resources/shark ]; then
+  if [ ! -d "$LOGS_DIR"/shark ]; then
+    echo mkdir -p "$LOGS_DIR"/shark
+    mkdir -p "$LOGS_DIR"/shark
+    if [ $? -ne 0 ]; then
+      echo Unable to create data folder "$LOGS_DIR"/shark
+    fi
+  fi
+fi
+if [ -d "$INSTALL_DIR"/resources/tomcat ]; then
+  if [ ! -d "$LOGS_DIR"/tomcat ]; then
+    echo mkdir -p "$LOGS_DIR"/tomcat
+    mkdir -p "$LOGS_DIR"/tomcat
+    if [ $? -ne 0 ]; then
+      echo Unable to create data folder "$LOGS_DIR"/tomcat
+    fi
+  fi
+fi
+
+###############################
+# Linux
+###############################
+if [ "$DISTRIBUTION" != "osx" ]; then
+  if [ "$SYSTEM_INSTALL" != "no_services" ]; then
+    USERHOME=/var/lib/cassandra
+
+    if [ "$CASSANDRA_USER" != "" ]; then
+      echo Creating groups and users
+      if [ "$DISTRIBUTION" = "debian" ]; then
+        if ! getent group "$CASSANDRA_GROUP" >/dev/null; then
+          echo Creating group "$CASSANDRA_GROUP"
+          echo addgroup --system "$CASSANDRA_GROUP"
+          addgroup --system "$CASSANDRA_GROUP"
+        fi
+
+        if ! getent passwd "$CASSANDRA_USER" >/dev/null; then
+          echo Creating user "$CASSANDRA_USER"
+          echo adduser --ingroup "$CASSANDRA_GROUP" \
+                       --home "$USERHOME" \
+                       "$CASSANDRA_USER"
+          adduser --quiet \
+                  --system \
+                  --ingroup "$CASSANDRA_GROUP" \
+                  --quiet \
+                  --disabled-login \
+                  --disabled-password \
+                  --home "$USERHOME" \
+                  --no-create-home \
+                  -gecos "Cassandra database" \
+                  "$CASSANDRA_USER"
+        fi
+      fi
+
+      if [ "$DISTRIBUTION" = "redhat" -o "$DISTRIBUTION" = "fedora" -o \
+           "$DISTRIBUTION" = "centos" -o "$DISTRIBUTION" = "suse" ]; then
+        if ! getent group "$CASSANDRA_GROUP" >/dev/null; then
+          echo Creating group "$CASSANDRA_GROUP"
+          echo groupadd -r "$CASSANDRA_GROUP"
+          groupadd -r "$CASSANDRA_GROUP"
+        fi
+
+        if ! getent passwd "$CASSANDRA_USER" >/dev/null; then
+          echo Creating user "$CASSANDRA_USER"
+          echo useradd -d "$USERHOME" -g "$CASSANDRA_GROUP" -M -r "$CASSANDRA_USER"
+          useradd -d "$USERHOME" -g "$CASSANDRA_GROUP" -M -r "$CASSANDRA_USER"
+        fi
+      fi
+    fi
+
+    echo installing services
+    if [ -f "$INSTALL_DIR"/bin/dse.init ]; then
+      if [ -x /etc/init.d/dse ]; then
+        echo rm -f /etc/init.d/dse
+        rm -f /etc/init.d/dse
+      fi
+      echo ln -s "$INSTALL_DIR"/bin/dse.init /etc/init.d/dse
+      ln -s "$INSTALL_DIR"/bin/dse.init /etc/init.d/dse
+      if [ -f /etc/default/dse ]; then
+        echo rm -f /etc/default/dse
+        rm -f /etc/default/dse
+      fi
+      echo ln -s "$INSTALL_DIR"/resources/dse/conf/dse.default /etc/default/dse
+      ln -s "$INSTALL_DIR"/resources/dse/conf/dse.default /etc/default/dse
+      if [ "$SYSTEM_INSTALL" = "services_and_utilities" -o "$SYSTEM_INSTALL" = "services_only" ]; then
+        if [ -d /etc/dse ]; then
+          echo rm -rf /etc/dse
+          rm -rf /etc/dse
+        fi
+        echo mkdir -p /etc/dse
+        mkdir -p /etc/dse
+        if [ -x /etc/dse/dse.yaml ]; then
+          echo rm -f /etc/dse/dse.yaml
+          rm -f /etc/dse/dse.yaml
+        fi
+        ln -s "$INSTALL_DIR/resources/dse/conf/dse.yaml" /etc/dse
+        #mv "$INSTALL_DIR/resources/dse/conf/dse.yaml" "$INSTALL_DIR/resources/dse/conf/dse.yaml.inst"
+        if [ -x /etc/dse/dse-env.sh ]; then
+          echo rm -f /etc/dse/dse-env.sh
+          rm -f /etc/dse/dse-env.sh
+        fi
+        ln -s "$INSTALL_DIR/bin/dse-env.sh" /etc/dse
+        if [ -x /etc/dse/byoh-env.sh ]; then
+          echo rm -f /etc/dse/byoh-env.sh
+          rm -f /etc/dse/byoh-env.sh
+        fi
+        ln -s "$INSTALL_DIR/bin/byoh-env.sh" /etc/dse
+        if [ -x /etc/dse/dserc-env.sh ]; then
+          echo rm -f /etc/dse/dserc-env.sh
+          rm -f /etc/dse/dserc-env.sh
+        fi
+        ln -s "$INSTALL_DIR/bin/dserc-env.sh" /etc/dse
+        if [ ! -d /etc/dse/cassandra ]; then
+          echo mkdir -p /etc/dse/cassandra
+          mkdir -p /etc/dse/cassandra
+        fi
+        ln -s "$INSTALL_DIR"/resources/cassandra/conf/* /etc/dse/cassandra
+        if [ -h /etc/dse/cassandra/logback-tools.xml ]; then
+            # Special case for logback config file (see DSP-5532). We
+            # remove the symlink to avoid having it in two locations
+            # on the classpath.
+            rm -f /etc/dse/cassandra/logback-tools.xml
+        fi
+        if [ ! -d /etc/dse/hadoop ]; then
+          echo mkdir -p /etc/dse/hadoop
+          mkdir -p /etc/dse/hadoop
+        fi
+        ln -s "$INSTALL_DIR"/resources/hadoop/conf/* /etc/dse/hadoop
+        if [ ! -d /etc/dse/hive ]; then
+          echo mkdir -p /etc/dse/hive
+          mkdir -p /etc/dse/hive
+        fi
+        ln -s "$INSTALL_DIR"/resources/hive/conf/* /etc/dse/hive
+        if [ ! -d /etc/dse/mahout ]; then
+          echo mkdir -p /etc/dse/mahout
+          mkdir -p /etc/dse/mahout
+        fi
+        ln -s "$INSTALL_DIR"/resources/mahout/conf/* /etc/dse/mahout
+        if [ ! -d /etc/dse/pig ]; then
+          echo mkdir -p /etc/dse/pig
+          mkdir -p /etc/dse/pig
+        fi
+        ln -s "$INSTALL_DIR"/resources/pig/conf/* /etc/dse/pig
+        if [ ! -d /etc/dse/sqoop ]; then
+          echo mkdir -p /etc/dse/sqoop
+          mkdir -p /etc/dse/sqoop
+        fi
+        ln -s "$INSTALL_DIR"/resources/sqoop/conf/* /etc/dse/sqoop
+        if [ ! -d /etc/dse/spark ]; then
+          echo mkdir -p /etc/dse/spark
+          mkdir -p /etc/dse/spark
+        fi
+        ln -s "$INSTALL_DIR"/resources/spark/conf/* /etc/dse/spark
+        if [ ! -d /etc/dse/shark ]; then
+          echo mkdir -p /etc/dse/shark
+          mkdir -p /etc/dse/shark
+        fi
+        ln -s "$INSTALL_DIR"/resources/shark/conf/* /etc/dse/shark
+        if [ "$SYSTEM_INSTALL" = "services_and_utilities" ]; then
+          if [ -x /usr/bin/dsetool ]; then
+            echo rm -f /usr/bin/dsetool
+            rm -f /usr/bin/dsetool
+          fi
+          echo ln -s "$INSTALL_DIR"/bin/dsetool /usr/bin/dsetool
+          ln -s "$INSTALL_DIR"/bin/dsetool /usr/bin/dsetool
+          if [ -x /usr/bin/dse-client-tool ]; then
+            echo rm -f /usr/bin/dse-client-tool
+            rm -f /usr/bin/dse-client-tool
+          fi
+          if [ -x "$INSTALL_DIR"/bin/dse-client-tool ]; then
+            echo ln -s "$INSTALL_DIR"/bin/dse-client-tool /usr/bin/dse-client-tool
+            ln -s "$INSTALL_DIR"/bin/dse-client-tool /usr/bin/dse-client-tool
+          fi
+          if [ -x /usr/bin/byoh ]; then
+            echo rm -f /usr/bin/byoh
+            rm -f /usr/bin/byoh
+          fi
+          echo ln -s "$INSTALL_DIR"/bin/byoh /usr/bin/byoh
+          ln -s "$INSTALL_DIR"/bin/byoh /usr/bin/byoh
+          if [ -x /usr/bin/dse ]; then
+            echo rm -f /usr/bin/dse
+            rm -f /usr/bin/dse
+          fi
+          echo ln -s "$INSTALL_DIR"/bin/dse /usr/bin/dse
+          ln -s "$INSTALL_DIR"/bin/dse /usr/bin/dse
+          if [ -x /usr/bin/make-dse-demos.sh ]; then
+            echo rm -f /usr/bin/make-dse-demos.sh
+            rm -f /usr/bin/make-dse-demos.sh
+          fi
+          echo ln -s "$INSTALL_DIR"/bin/make-dse-demos.sh /usr/bin/make-dse-demos.sh
+          ln -s "$INSTALL_DIR"/bin/make-dse-demos.sh /usr/bin/make-dse-demos.sh
+          if [ -x /usr/bin/nodetool ]; then
+            echo rm -f /usr/bin/nodetool
+            rm -f /usr/bin/nodetool
+          fi
+          echo ln -s "$INSTALL_DIR"/bin/nodetool /usr/bin/nodetool
+          ln -s "$INSTALL_DIR"/bin/nodetool /usr/bin/nodetool
+          if [ -x /usr/bin/cqlsh ]; then
+            echo rm -f /usr/bin/cqlsh
+            rm -f /usr/bin/cqlsh
+          fi
+          echo ln -s "$INSTALL_DIR"/bin/cqlsh /usr/bin/cqlsh
+          ln -s "$INSTALL_DIR"/bin/cqlsh /usr/bin/cqlsh
+          if [ -x /usr/bin/debug-cql ]; then
+            echo rm -f /usr/bin/debug-cql
+            rm -f /usr/bin/debug-cql
+          fi
+          echo ln -s "$INSTALL_DIR"/resources/cassandra/bin/debug-cql /usr/bin/debug-cql
+          ln -s "$INSTALL_DIR"/resources/cassandra/bin/debug-cql /usr/bin/debug-cql
+          if [ -x /usr/bin/json2sstable ]; then
+            echo rm -f /usr/bin/json2sstable
+            rm -f /usr/bin/json2sstable
+          fi
+          echo ln -s "$INSTALL_DIR"/resources/cassandra/bin/json2sstable /usr/bin/json2sstable
+          ln -s "$INSTALL_DIR"/resources/cassandra/bin/json2sstable /usr/bin/json2sstable
+          if [ -x /usr/bin/sstable2json ]; then
+            echo rm -f /usr/bin/sstable2json
+            rm -f /usr/bin/sstable2json
+          fi
+          echo ln -s "$INSTALL_DIR"/resources/cassandra/bin/sstable2json /usr/bin/sstable2json
+          ln -s "$INSTALL_DIR"/resources/cassandra/bin/sstable2json /usr/bin/sstable2json
+          if [ -x /usr/bin/sstablekeys ]; then
+            echo rm -f /usr/bin/sstablekeys
+            rm -f /usr/bin/sstablekeys
+          fi
+          echo ln -s "$INSTALL_DIR"/resources/cassandra/bin/sstablekeys /usr/bin/sstablekeys
+          ln -s "$INSTALL_DIR"/resources/cassandra/bin/sstablekeys /usr/bin/sstablekeys
+          if [ -x /usr/bin/sstableloader ]; then
+            echo rm -f /usr/bin/sstableloader
+            rm -f /usr/bin/sstableloader
+          fi
+          echo ln -s "$INSTALL_DIR"/resources/cassandra/bin/sstableloader /usr/bin/sstableloader
+          ln -s "$INSTALL_DIR"/resources/cassandra/bin/sstableloader /usr/bin/sstableloader
+          if [ -x /usr/bin/sstablescrub ]; then
+            echo rm -f /usr/bin/sstablescrub
+            rm -f /usr/bin/sstablescrub
+          fi
+          echo ln -s "$INSTALL_DIR"/resources/cassandra/bin/sstablescrub /usr/bin/sstablescrub
+          ln -s "$INSTALL_DIR"/resources/cassandra/bin/sstablescrub /usr/bin/sstablescrub
+          if [ -x /usr/bin/sstablesplit ]; then
+            echo rm -f /usr/bin/sstablesplit
+            rm -f /usr/bin/sstablesplit
+          fi
+          echo ln -s "$INSTALL_DIR"/resources/cassandra/bin/sstablesplit /usr/bin/sstablesplit
+          ln -s "$INSTALL_DIR"/resources/cassandra/bin/sstablesplit /usr/bin/sstablesplit
+          if [ -x /usr/bin/sstableupgrade ]; then
+            echo rm -f /usr/bin/sstableupgrade
+            rm -f /usr/bin/sstableupgrade
+          fi
+          echo ln -s "$INSTALL_DIR"/resources/cassandra/bin/sstableupgrade /usr/bin/sstableupgrade
+          ln -s "$INSTALL_DIR"/resources/cassandra/bin/sstableupgrade /usr/bin/sstableupgrade
+          if [ -x /usr/bin/cassandra-stress ]; then
+            echo rm -f /usr/bin/cassandra-stress
+            rm -f /usr/bin/cassandra-stress
+          fi
+          echo ln -s "$INSTALL_DIR"/resources/cassandra/tools/bin/cassandra-stress /usr/bin/cassandra-stress
+          ln -s "$INSTALL_DIR"/resources/cassandra/tools/bin/cassandra-stress /usr/bin/cassandra-stress
+          if [ -x /usr/bin/cassandra-stressd ]; then
+            echo rm -f /usr/bin/cassandra-stressd
+            rm -f /usr/bin/cassandra-stressd
+          fi
+          echo ln -s "$INSTALL_DIR"/resources/cassandra/tools/bin/cassandra-stressd /usr/bin/cassandra-stressd
+          ln -s "$INSTALL_DIR"/resources/cassandra/tools/bin/cassandra-stressd /usr/bin/cassandra-stressd
+          if [ -x /usr/bin/sstablelevelreset ]; then
+            echo rm -f /usr/bin/sstablelevelreest
+            rm -f /usr/bin/sstablelevelreset
+          fi
+          echo ln -s "$INSTALL_DIR"/resources/cassandra/tools/bin/sstablelevelreset /usr/bin/sstablelevelreset
+          ln -s "$INSTALL_DIR"/resources/cassandra/tools/bin/sstablelevelreset /usr/bin/sstablelevelreset
+          if [ -x /usr/bin/sstablemetadata ]; then
+            echo rm -f /usr/bin/sstablemetadata
+            rm -f /usr/bin/sstablemetadata
+          fi
+          echo ln -s "$INSTALL_DIR"/resources/cassandra/tools/bin/sstablemetadata /usr/bin/sstablemetadata
+          ln -s "$INSTALL_DIR"/resources/cassandra/tools/bin/sstablemetadata /usr/bin/sstablemetadata
+        fi
+      fi
+    fi
+    if [ -f "$INSTALL_DIR"/bin/cassandra.init.redhat ]; then
+      if [ -x /etc/init.d/cassandra ]; then
+        echo rm -f /etc/init.d/cassandra
+        rm -f /etc/init.d/cassandra
+      fi
+      if [ "$DISTRIBUTION" = "redhat" -o "$DISTRIBUTION" = "fedora" -o \
+           "$DISTRIBUTION" = "centos" -o "$DISTRIBUTION" = "suse" ]; then
+        echo ln -s "$INSTALL_DIR"/bin/cassandra.init.redhat /etc/init.d/cassandra
+        ln -s "$INSTALL_DIR"/bin/cassandra.init.redhat /etc/init.d/cassandra
+      else
+        echo ln -s "$INSTALL_DIR"/bin/cassandra.init.debian /etc/init.d/cassandra
+        ln -s "$INSTALL_DIR"/bin/cassandra.init.debian /etc/init.d/cassandra
+      fi
+      if [ -x /etc/default/cassandra ]; then
+        echo rm -f /etc/default/cassandra
+        rm -f /etc/default/cassandra
+      fi
+      if [ "$SYSTEM_INSTALL" = "services_and_utilities" -o "$SYSTEM_INSTALL" = "services_only" ]; then
+        if [ ! -d /etc/cassandra ]; then
+          echo mkdir -p /etc/cassandra
+          mkdir -p /etc/cassandra
+        else
+          echo mv /etc/dse /etc/cassandra.old
+          mv /etc/dse /etc/cassandra.old
+        fi
+        ln -s "$INSTALL_DIR"/conf/* /etc/cassandra
+      fi
+      if [ -x /usr/bin/nodetool ]; then
+        echo rm -f /usr/bin/nodetool
+        rm -f /usr/bin/nodetool
+      fi
+      echo ln -s "$INSTALL_DIR"/bin/nodetool /usr/bin/nodetool
+      ln -s "$INSTALL_DIR"/bin/nodetool /usr/bin/nodetool
+      if [ -x /usr/bin/cqlsh ]; then
+        echo rm -f /usr/bin/cqlsh
+        rm -f /usr/bin/cqlsh
+      fi
+      echo ln -s "$INSTALL_DIR"/bin/cqlsh /usr/bin/cqlsh
+      ln -s "$INSTALL_DIR"/bin/cqlsh /usr/bin/cqlsh
+    fi
+
+    # Install system wide tuning parameters. Uninstall will not undo 
+    # these changes, as that may destabilize the configuration (scary
+    # enough to add these).
+    if [ -f "$INSTALL_DIR"/resources/cassandra/conf/cassandra-limits.conf ]; then
+      echo sed -e "s/cassandra/$CASSANDRA_USER/g" "$INSTALL_DIR"/resources/cassandra/conf/cassandra-limits.conf
+      sed -e "s/cassandra/$CASSANDRA_USER/g" "$INSTALL_DIR"/resources/cassandra/conf/cassandra-limits.conf > /etc/security/limits.d/cassandra-limits.conf
+    fi
+    if [ -f "$INSTALL_DIR"/conf/cassandra-limits.conf ]; then
+      echo sed -e "s/cassandra/$CASSANDRA_USER/g" "$INSTALL_DIR"/conf/cassandra-limits.conf
+      sed -e "s/cassandra/$CASSANDRA_USER/g" "$INSTALL_DIR"/conf/cassandra-limits.conf > /etc/security/limits.d/cassandra-limits.conf
+    fi
+    
+    if [ -d /etc/sysctl.d ]; then
+      echo installing cassandra-sysctl.conf
+      if [ -f "$INSTALL_DIR"/resources/cassandra/conf/cassandra-sysctl.conf ]; then
+        echo cp "$INSTALL_DIR"/resources/cassandra/conf/cassandra-sysctl.conf /etc/sysctl.d
+        cp "$INSTALL_DIR"/resources/cassandra/conf/cassandra-sysctl.conf /etc/sysctl.d
+      fi
+      if [ -f "$INSTALL_DIR"/conf/cassandra-sysctl.conf ]; then
+        echo cp "$INSTALL_DIR"/conf/cassandra-sysctl.conf /etc/sysctl.d
+        cp "$INSTALL_DIR"/conf/cassandra-sysctl.conf /etc/sysctl.d
+      fi
+      
+      if ! sysctl -p /etc/sysctl.d/cassandra-sysctl.conf; then
+        echo >&2
+        echo "Warning: unable to set vm.max_map_count; is this an OpenVZ" >&2
+        echo "instance? If so, it is highly recommended that you set" >&2
+        echo "vm.max_map_count to 1048575 in the host." >&2
+        echo >&2
+        echo "Deleting the local sysctl.d/cassandra.conf." >&2
+        if [ -f /etc/sysctl.d/cassandra-sysctl.conf ]; then
+          echo rm -vf /etc/sysctl.d/cassandra-sysctl.conf
+          rm -vf /etc/sysctl.d/cassandra-sysctl.conf
+        fi
+      fi
+    else
+      if [ -f /etc/sysctl.conf ]; then
+        echo Checking to see if /etc/sysctl.conf needs updating
+        # Is the change already there?
+        grep vm.max_map_count /etc/sysctl.conf
+        if [ $? -ne 0 ]; then
+          echo updating /etc/sysctl.conf
+          echo cat "$INSTALL_DIR"/resources/cassandra/conf/cassandra-sysctl.conf >> /etc/sysctl.conf
+          cat "$INSTALL_DIR"/resources/cassandra/conf/cassandra-sysctl.conf >> /etc/sysctl.conf
+        fi
+      fi
+    fi
+  fi
+
+  # Fix up permissions
+  if [ -f "$INSTALL_DIR/resources/hadoop/native/Linux-amd64-64/bin/task-controller" ]; then
+    echo chmod 4750 "$INSTALL_DIR/resources/hadoop/native/Linux-amd64-64/bin/task-controller"
+    chmod 4750 "$INSTALL_DIR/resources/hadoop/native/Linux-amd64-64/bin/task-controller"
+  fi
+  if [ -f "$INSTALL_DIR/resources/hadoop/native/Linux-i386-32/bin/task-controller" ]; then
+    echo chmod 4750 "$INSTALL_DIR/resources/hadoop/native/Linux-i386-32/bin/task-controller"
+    chmod 4750 "$INSTALL_DIR/resources/hadoop/native/Linux-i386-32/bin/task-controller"
+  fi
+  if [ -f "$INSTALL_DIR/resources/hadoop/native/Mac_OS_X-x86_64-64/bin/task-controller" ]; then
+    echo chmod 4750 "$INSTALL_DIR/resources/hadoop/native/Mac_OS_X-x86_64-64/bin/task-controller"
+    chmod 4750 "$INSTALL_DIR/resources/hadoop/native/Mac_OS_X-x86_64-64/bin/task-controller"
+  fi
+
+  if [ -f /etc/dse/hadoop/taskcontroller.cfg ]; then
+    echo Fixing permissions on /etc/dse/hadoop/taskcontroller.cfg
+    echo chgrp "$CASSANDRA_GROUP" /etc/dse/hadoop/taskcontroller.cfg
+    chgrp "$CASSANDRA_GROUP" /etc/dse/hadoop/taskcontroller.cfg
+  fi
+
+  if [ -f /etc/init.d/dse ]; then
+    if [ "$DISTRIBUTION" = "centos" -o "$DISTRIBUTION" = "redhat" ]; then
+      echo /sbin/chkconfig --add dse
+      /sbin/chkconfig --add dse
+    else
+      echo update-rc.d dse defaults
+      update-rc.d dse defaults
+    fi
+  fi
+  if [ -f /etc/init.d/cassandra ]; then
+    if [ "$DISTRIBUTION" = "centos" -o "$DISTRIBUTION" = "redhat" ]; then
+      echo /sbin/chkconfig --add cassandra
+      /sbin/chkconfig --add cassandra
+    else
+      echo update-rc.d cassandra defaults
+      update-rc.d cassandra defaults
+    fi
+  fi
+fi
+
+echo Running server sudo post install actions DONE
+exit 0
+

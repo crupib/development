@@ -1,0 +1,25 @@
+#!/bin/sh
+
+echo Running make install dir action
+echo Arguments: "$*"
+echo
+env
+
+INSTALL_DIR=$1
+CURRENT_USER=$2
+
+# Create folders
+if [ ! -d "$INSTALL_DIR" ]; then
+  echo mkdir -p "$INSTALL_DIR"
+  mkdir -p "$INSTALL_DIR"
+  if [ $? -ne 0 ]; then
+    echo Unable to create install folder "$INSTALL_DIR"
+  else
+    echo chown "$CURRENT_USER" "$INSTALL_DIR"
+    chown "$CURRENT_USER" "$INSTALL_DIR"
+  fi
+fi
+
+echo Running make install dir actions DONE
+exit 0
+

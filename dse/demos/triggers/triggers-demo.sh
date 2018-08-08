@@ -1,0 +1,1 @@
+cqlsh `hostname -f` <create_table.cql

@@ -1,0 +1,13 @@
+SEQUENTIAL
+LUCPERF|HighTerm: from # freq=1002692
+LUCPERF|MedTerm: http # freq=924077
+LUCPERF|LowTerm: also # freq=739813
+LUCPERF|Prefix3: 194*
+LUCPERF|IntNRQ: nrq//id 6207 55832
+LUCPERF|OrHighLow: during certify # freq=316355 freq=983
+LUCPERF|Wildcard: fr*m
+LUCPERF|AndHighMed: +version +sorry # freq=118404 freq=13685
+LUCPERF|LowPhrase: "became one" # freq=9319|220770|570801
+LUCPERF|LowSloppyPhrase: "became one"~4 # freq=9319|220770|570801
+LUCPERF|Fuzzy1: sacra~1
+LUCPERF|Fuzzy2: sacra~2

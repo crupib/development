@@ -1,0 +1,3 @@
+SEQUENTIAL
+HTTPWRITE(10)|text=This is a benchmark of dse search|type=$RANDOM_10|id=$RANDOM_UUID
+HTTPREAD|wt=json&q=text:benchmark&facet=true&facet.field=type

@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %} - Report{% endblock %}
+{% block reports %}active{% endblock %}
+
+{% block content %}
+    <form id="side_panel">
+        <h1>{{ stationid }} {{ metric|title }} ({% if monthly %}Monthly{% else %}Daily{% endif %})</h1>
+        <section><div id="legend"></div></section>
+
+        <section></section>
+
+        <section>
+            {% for metric in metrics %}
+                {% if monthly %}
+                    <p><a href="{{ url_for('report', stationid=stationid, metric=metric, rollup='monthly')}}">{{ metric|title }}</a></p>
+                {% else %}
+                    <p><a href="{{ url_for('report', stationid=stationid, metric=metric, rollup='daily')}}">{{ metric|title }}</a></p>
+                {% endif %}
+            {% endfor %}
+        </section>
+
+        <section>
+            {% if monthly %}
+                <p><a href="{{ url_for('report', stationid=stationid, metric=metric, rollup='daily') }}">Daily Rollup</a></p>
+            {% else %}
+                <p><a href="{{ url_for('report', stationid=stationid, metric=metric, rollup='monthly') }}">Monthly Rollup</a></p>
+            {% endif %}
+        </section>
+    </form>
+
+    <div id="chart_container">
+        <div id="chart">
+            <p>Retrieving each data point, per month or per day, for the requested scenario...</p>
+            <p>These requests are using the python-driver to read the output of Hive jobs run against Cassandra data.</p>
+        </div>
+        <div class="col-sm-offset-2">
+            <div id="elapsed-clock"></div>
+        </div>
+        <table class="table" id="data"></table>
+    </div>
+{% endblock %}
+
+
+{% block page_script %}
+    <script>
+
+    var buildGraph = function (json) {
+
+        $("#chart").empty();
+        $("#legend").empty();
+
+        var palette = new Rickshaw.Color.Palette({ scheme: 'classic9' });
+
+        var allseries = [];
+
+        // format data for Rickshaw.js
+        var keys = {{ stats|safe }};
+        for (var i in keys) {
+            var key = keys[i];
+            var data = json[key];
+            var color = palette.color();
+            if (key != 'total')
+                allseries.push({ 'color': color, 'data': data, 'name': key });
+        }
+        allseries.reverse();
+
+        // render graph
+        var graph = new Rickshaw.Graph({
+            element: document.querySelector("#chart"),
+            width: 900,
+            height: 550,
+            min: 'auto',
+            renderer: 'line',
+            series: allseries
+        });
+        graph.render();
+
+        // format graph
+        var hoverDetail = new Rickshaw.Graph.HoverDetail({
+            graph: graph
+        });
+
+        var legend = new Rickshaw.Graph.Legend({
+            graph: graph,
+            element: document.querySelector('#legend')
+        });
+
+        var shelving = new Rickshaw.Graph.Behavior.Series.Toggle({
+            graph: graph,
+            legend: legend
+        });
+
+        var highlighter = new Rickshaw.Graph.Behavior.Series.Highlight({
+            graph: graph,
+            legend: legend
+        });
+
+        var time = new Rickshaw.Fixtures.Time();
+        var month = time.unit('month');
+        var xAxis = new Rickshaw.Graph.Axis.Time({
+            graph: graph,
+            timeUnit: month
+        });
+        xAxis.render();
+
+        var yAxis = new Rickshaw.Graph.Axis.Y({
+            graph: graph
+        });
+        yAxis.render();
+    };
+
+    var buildTable = function (json) {
+        var keys = {{ stats|safe }};
+
+        // build header row
+        var $tr =$('<tr>');
+        $tr.append($('<th>').append('timestamp'));
+        for (i in keys) {
+            $tr.append($('<th>').append(keys[i]));
+        }
+        $tr.appendTo('table#data');
+
+        // build data rows
+        for (var i = 0; i < json[keys[0]].length; i++) {
+            var $tr = $('<tr>');
+            var date = new Date(json[keys[0]][i]['x'] * 1000);
+            $tr.append($('<td>').append(moment(date).format('MMMM D, YYYY')));
+            for (j in keys) {
+                var key = keys[j];
+                $tr.append($('<td>').append(json[key][i]['y']));
+            }
+            $tr.appendTo('table#data');
+        }
+    };
+
+    var handleRequest = function (msg) {
+        var json = jQuery.parseJSON(msg);
+
+        buildGraph(json);
+        buildTable(json);
+    };
+
+    var request = $.ajax({
+        {% if monthly %}
+            url: "{{url_for('series', stationid=stationid, rollup='monthly') }}{{ metric }}",
+        {% else %}
+            url: "{{url_for('series', stationid=stationid, rollup='daily') }}{{ metric }}",
+        {% endif %}
+        success: handleRequest
+    });
+
+    </script>
+{% endblock %}

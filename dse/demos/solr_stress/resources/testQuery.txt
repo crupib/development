@@ -1,0 +1,2 @@
+SEQUENTIAL
+HTTPREAD|wt=json&q=text:benchmark&facet=true&facet.field=type

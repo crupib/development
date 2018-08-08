@@ -1,0 +1,18 @@
+Defaults:opscenter-agent !requiretty
+
+Cmnd_Alias CASSCOMMANDS = /sbin/service cassandra *, /sbin/service dse *, \
+                          /usr/sbin/service cassandra *, /usr/sbin/service dse *, \
+                          /etc/init.d/cassandra *, /etc/init.d/dse *, \
+                          /usr/bin/yum install -y *, \
+                          /usr/bin/yum list installed *, \
+                          /bin/mv * /etc/yum.repos.d/datastax.repo, \
+                          /sbin/blockdev --report, \
+                          /bin/chgrp -R opscenter-admin /etc/cassandra, \
+                          /bin/chgrp -R opscenter-admin /etc/dse, \
+                          /bin/chgrp opscenter-admin /etc/default/dse, \
+                          /bin/chmod -R g+rwX /etc/cassandra, \
+                          /bin/chmod -R g+rwX /etc/dse, \
+                          /bin/chmod g+rw /etc/default/dse, \
+                          /bin/tar rf /tmp*, \
+                          /usr/bin/find * -mindepth ? -maxdepth ? -type d -group cassandra ! -perm -g=wrX -exec chmod g+wrX {} ;
+opscenter-agent ALL = NOPASSWD: CASSCOMMANDS

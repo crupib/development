@@ -1,0 +1,56 @@
+#!/bin/sh
+
+INSTALL_DIR="/Users/crupib/dse"
+if [ -x /etc/init.d/dse ]; then
+  if [ -x "$(which invoke-rc.d 2>/dev/null)" ]; then
+    invoke-rc.d dse stop || true
+  else
+    if [ -x /sbin/service ]; then
+      /sbin/service dse stop || true
+    else
+      /etc/init.d/dse stop || true
+    fi
+  fi
+else
+  if [ -x /etc/init.d/cassandra ]; then
+    if [ -x "$(which invoke-rc.d 2>/dev/null)" ]; then
+      invoke-rc.d cassandra stop || true
+    else
+      if [ -x /sbin/service ]; then
+        /sbin/service cassandra stop || true
+      else
+        /etc/init.d/cassandra stop || true
+      fi
+    fi
+  else
+    if [ -f "$HOME/Library/LaunchAgents/com.datastax.dse.plist" ]; then
+      launchctl unload "$HOME/Library/LaunchAgents/com.datastax.dse.plist"
+    fi
+    if [ -f "$HOME/Library/LaunchAgents/com.datastax.dsc.plist" ]; then
+      launchctl unload "$HOME/Library/LaunchAgents/com.datastax.dsc.plist"
+    fi 
+    if [ -f "$INSTALL_DIR/bin/dse" ]; then
+      "$INSTALL_DIR/bin/dse" cassandra-stop "$@"
+    else
+      PID=""
+      if [ "x$PID" = "x" ]; then
+        if [ -x "$(which pgrep 2>/dev/null)" ]; then
+          PID=$(pgrep -f org.apache.cassandra.service.CassandraDaemon 2> /dev/null)
+        fi
+      fi
+      if [ "x$PID" = "x" ]; then
+        PID=$(ps -ww -ef|grep org.apache.cassandra.service.CassandraDaemon|grep -v grep|awk '{print $2}' 2> /dev/null)
+      fi
+      if [ "x$PID" = "x" ]; then
+        PID=$(ps -edaf|grep org.apache.cassandra.service.CassandraDaemon|grep java|awk '{print $2}' 2> /dev/null)
+      fi
+      if [ "x$PID" = "x" ]; then
+        echo "Unable to find Cassandra process probably alrady stopped."
+        exit -1
+      else
+        kill "$PID"
+      fi
+    fi
+  fi
+fi
+sleep 2

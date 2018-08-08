@@ -1,0 +1,33 @@
+Manifest-Version: 1.0
+Export-Package: WEB-INF;version="4.10.3.1_204",admin.html;version="4.1
+ 0.3.1_204",css;version="4.10.3.1_204",css.styles;version="4.10.3.1_20
+ 4",favicon.ico;version="4.10.3.1_204",img;version="4.10.3.1_204",img.
+ filetypes;version="4.10.3.1_204",img.ico;version="4.10.3.1_204",js;ve
+ rsion="4.10.3.1_204",js.lib;version="4.10.3.1_204",js.scripts;version
+ ="4.10.3.1_204",tpl;version="4.10.3.1_204"
+Implementation-Title: org.apache.solr
+Built-By: jenkins
+Tool: Bnd-2.1.0.20130426-122213
+Implementation-Vendor: The Apache Software Foundation
+Implementation-Vendor-Id: org.apache.solr
+Specification-Title: Apache Solr Web UI
+Bundle-License: http://www.apache.org/licenses/LICENSE-2.0.txt
+Bundle-SymbolicName: org.apache.solr.web
+Extension-Name: org.apache.solr
+X-Compile-Target-JDK: 1.7
+Implementation-Version: 4.10.3.1.204 67cb16acebc95e1d67302a7e35a6bd436
+ 55dbf12 - jenkins - 2015-10-14 16:04:47
+Specification-Vendor: The Apache Software Foundation
+Bundle-Name: Apache Solr Web UI
+Created-By: Apache Maven Bundle Plugin
+X-Compile-Source-JDK: 1.7
+Bundle-Vendor: The Apache Software Foundation
+Build-Jdk: 1.7.0_51
+Bundle-Version: 4.10.3.1_204
+Bnd-LastModified: 1444838855065
+Bundle-ManifestVersion: 2
+Bundle-Description: Apache Solr Web UI
+Bundle-DocURL: http://www.apache.org/
+Originally-Created-By: Apache Maven Bundle Plugin
+Archiver-Version: Plexus Archiver
+

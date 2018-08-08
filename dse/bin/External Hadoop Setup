@@ -1,0 +1,8 @@
+#!/bin/sh
+
+if [ -x "/usr/bin/sw_vers" ]; then
+  open http://www.datastax.com/register > /dev/null 2>&1
+else
+  exec xdg-open http://www.datastax.com/register > /dev/null 2>&1 &
+fi
+exit 0

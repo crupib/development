@@ -1,0 +1,12 @@
+#!/bin/bash
+
+# An example pre-snapshot custom script.
+#
+# Pre-snapshot scripts will be called prior to the DataStax agent triggering
+# a JMX snapshot. This script is an opportunity to do any preparation or cleanup.
+#
+# To indicate success, this script should exit with a status of 0.  Any other
+# status will be considered an indication of failure, and the snapshot will
+# be aborted.
+
+exit 0

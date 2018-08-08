@@ -1,0 +1,354 @@
+#!/bin/bash
+
+set -x
+
+INSTALL_DIR=$1
+PRODUCT_TYPE=$2
+DATA_DIR=$3
+COMMITLOG_DIR=$4
+SAVED_CACHES_DIR=$5
+LOGS_DIR=$6
+DESKTOP_DIR=$7
+FULL_UNINSTALL=$8
+INSTALL_TYPE=$9
+SYSTEM_INSTALL=${10}
+CASSANDRA_USER=${11}
+CASSANDRA_GROUP=${12}
+DISTRIBUTION=${13}
+DISTRIBUTION_VERSION=${14}
+IS_UPGRADE=${15}
+TOOLS_DIR=${16}
+SUDO_SCRIPT=${17}
+SUDO_COMMAND=${18}
+if [ "$DS_DO_TEST" = "" ]; then
+  DS_DO_TEST=${19}
+fi 
+
+# Internal variables
+APPLICATIONS_DIR=
+APPLICATIONS_FALLBACK_DIR=
+APP_EXT=
+HOME_DIR=$HOME
+AGENT_USER=cassandra
+AGENT_GROUP=cassandra
+
+# Defaults
+if [ "$INSTALL_DIR" = "" ]; then
+  if [ -d "/usr/share/dse" ]; then
+    INSTALL_DIR="/usr/share/dse"
+    if [ "$IS_UPGRADE" = "" ]; then
+      IS_UPGRADE="1"
+    fi
+  elif [ -d "/usr/share/cassandra" ]; then
+    INSTALL_DIR="/usr/share/cassandra"
+    if [ "$IS_UPGRADE" = "" ]; then
+      IS_UPGRADE="1"
+    fi
+  elif [ -f "./bin/nodetool" ]; then
+    INSTALL_DIR=$(pwd)
+    if [ "$IS_UPGRADE" = "" ]; then
+      IS_UPGRADE="1"
+    fi
+  elif [ -f "./nodetool" ]; then
+    OLD_PWD=$(pwd)
+    INSTALL_DIR=$(cd ..; pwd)
+    cd "$OLD_PWD"
+    if [ "$IS_UPGRADE" = "" ]; then
+      IS_UPGRADE="1"
+    fi
+  else
+    echo Unable to determine INSTALL_DIR. Please specify on the commandline
+    exit 1
+  fi
+fi
+if [ "$IS_UPGRADE" = "" ]; then
+  IS_UPGRADE="0"
+fi
+if [ "$IS_UPGRADE" = "yes" ]; then
+  IS_UPGRADE="1"
+fi
+if [ "$IS_UPGRADE" = "no" ]; then
+  IS_UPGRADE="0"
+fi
+if [ "$PRODUCT_TYPE" = "" ]; then
+  if [ -f /etc/init.d/dse -o -f "$INSTALL_DIR"/bin/dse ]; then
+    PRODUCT_TYPE="dse"
+  elif [ -f /etc/init.d/cassandra -o -f "$INSTALL_DIR"/bin/cassandra ]; then
+    PRODUCT_TYPE="dsc"
+  else
+    PRODUCT_TYPE="dse"
+  fi
+fi
+if [ "$DATA_DIR" = "" ]; then
+  DATA_DIR="$INSTALL_DIR"/data
+fi
+if [ "$COMMITLOG_DIR" = "" ]; then
+  COMMITLOG_DIR="$INSTALL_DIR"/commitlog
+fi
+if [ "$SAVED_CACHES_DIR" = "" ]; then
+  SAVED_CACHES_DIR="$INSTALL_DIR"/saved_caches
+fi
+if [ "$LOGS_DIR" = "" ]; then
+  LOGS_DIR="$INSTALL_DIR"/logs
+fi
+if [ "$FULL_UNINSTALL" = "" ]; then
+  FULL_UNINSTALL="0"
+fi
+if [ "$FULL_UNINSTALL" = "yes" ]; then
+  FULL_UNINSTALL="1"
+fi
+if [ "$FULL_UNINSTALL" = "no" ]; then
+  FULL_UNINSTALL="0"
+fi
+if [ "$SYSTEM_INSTALL" = "" ]; then
+  if [ -f /etc/init.d/dse -o -f /etc/init.d/cassandra ]; then
+    SYSTEM_INSTALL="services_and_utilities"
+  else
+    SYSTEM_INSTALL="no_services"
+  fi
+fi
+if [ "$SYSTEM_INSTALL" = "yes" ]; then
+  SYSTEM_INSTALL="services_and_utilities"
+fi
+if [ "$SYSTEM_INSTALL" = "no" ]; then
+  SYSTEM_INSTALL="no_services"
+fi
+if [ "$CASSANDRA_USER" = "" ]; then
+  CASSANDRA_USER="cassandra"
+fi
+if [ "$CASSANDRA_GROUP" = "" ]; then
+  CASSANDRA_GROUP="cassandra"
+fi
+if [ "$DISTRIBUTION" = "" ]; then
+  if [ -d /Applications ]; then
+    DISTRIBUTION="osx"
+  else
+    if [ -f /etc/redhat-release ]; then
+      grep CentOS /etc/redhat-release
+      if [ $? = 0 ]; then
+        DISTRIBUTION="centos"
+      else
+        grep RedHat /etc/redhat-release
+        if [ $? = 0 ]; then
+          DISTRIBUTION="centos"
+        fi
+      fi
+    fi
+  fi
+fi
+if [ "$DISTRIBUTION_VERSION" = "" ]; then
+  if [ "$DISTRIBUTION" = "osx" ]; then
+    DISTRIBUTION_VERSION=$(sw_vers | grep 'ProductVersion:' | grep -o '[0-9]*\.[0-9]*\.[0-9]*')
+  elif [ "$DISTRIBUTION" = "centos" ]; then
+    DISTRIBUTION_VERSION=$(grep -o '[0-9]*\.[0-9]*' /etc/redhat-release)
+  elif [ "$DISTRIBUTION" = "redhat" ]; then
+    DISTRIBUTION_VERSION=$(grep -o '[0-9]*\.[0-9]*' /etc/redhat-release)
+  elif [ "$DISTRIBUTION" = "debian" ]; then
+echo 2
+  elif [ "$DISTRIBUTION" = "suse" ]; then
+echo 2
+  elif [ "$DISTRIBUTION" = "fedora" ]; then
+echo 2
+  elif [ "$DISTRIBUTION" = "windows" ]; then
+echo 2
+  else
+    DISTRIBUTION_VERSION="unkown"
+  fi
+fi
+DISTRIBUTION_MAJOR_VERSION=$(echo $DISTRIBUTION_VERSION|sed -e 's/\.[0-9]*$//g')
+
+case $PRODUCT_TYPE in
+  dse)
+    echo enterprise standalone
+    APP_FOLDER_NAME="DataStax Enterprise"
+  ;;
+  dsemulti)
+    echo enterprise standalone with all packages
+    APP_FOLDER_NAME="DataStax Enterprise"
+  ;;
+  dsc)
+    echo community standalone
+    APP_FOLDER_NAME="DataStax Community"
+  ;;
+  opscenter)
+    echo opscenter standalone
+    APP_FOLDER_NAME="DataStax OpsCenter"
+  ;;
+  datastax-agent)
+    echo datastax agent standalone
+    APP_FOLDER_NAME="DataStax Agent"
+  ;;
+  devcenter)
+    echo devcenter standalone
+    APP_FOLDER_NAME="DataStax DevCenter"
+  ;;
+  *)
+    echo Unknown product type $PRODUCT_TYPE
+  ;;
+esac
+
+if [ "$DS_DO_TEST" = "1" ]; then
+  exit 0
+fi
+
+# Some special stuff to enable unit testing
+if [ "$DS_DO_TEST" != "" ]; then
+  APPLICATIONS_DIR="./Applications"
+  HOME_DIR="./Home"
+fi
+
+###############################
+# OS X
+###############################
+if [ "$DISTRIBUTION" = "osx" ]; then
+  echo OS X
+
+  if [ "$APPLICATIONS_DIR" = "" ]; then
+    APPLICATIONS_DIR="/Applications"
+    if [ -d "$HOME_DIR/Applications/$APP_FOLDER_NAME" ]; then
+      APPLICATIONS_DIR="$HOME_DIR/Applications"
+    fi
+    APPLICATIONS_FALLBACK_DIR="$HOME_DIR/Applications"
+  fi
+  APP_EXT=.app
+fi
+
+###############################
+# Linux
+###############################
+if [ "$DISTRIBUTION" != "osx" ]; then
+  echo Linux
+
+  if [ "$APPLICATIONS_DIR" = "" ]; then
+    APPLICATIONS_DIR="$HOME_DIR/Desktop"
+    APPLICATIONS_FALLBACK_DIR="$HOME_DIR/Desktop"
+  fi
+fi
+
+# Print config info
+echo "install_dir $INSTALL_DIR"
+echo "product_dir $PRODUCT_TYPE"
+echo "data_dir $DATA_DIR"
+echo "commitlog_dir $COMMITLOG_DIR"
+echo "saved_caches_dir $SAVED_CACHES_DIR"
+echo "logs_dir $LOGS_DIR"
+echo "install type: $INSTALL_TYPE"
+echo "system_install $SYSTEM_INSTALL"
+echo "full_uninstall $FULL_UNINSTALL"
+echo "user $CASSANDRA_USER"
+echo "group $CASSANDRA_GROUP"
+echo "dist $DISTRIBUTION"
+echo "dist_version $DISTRIBUTION_VERSION"
+echo "dist_major_version $DISTRIBUTION_MAJOR_VERSION"
+echo "is_upgrade $IS_UPGRADE"
+echo "sudo $SUDO_COMMAND"
+echo "sudo script $SUDO_SCRIPT"
+echo "applications dir $APPLICATIONS_DIR"
+echo "applications fallback dir $APPLICATIONS_FALLBACK_DIR"
+echo "application extension: $APP_EXT"
+echo "agent user: $AGENT_USER"
+echo "agent group: $AGENT_GROUP"
+echo "desktop dir: $DESKTOP_DIR"
+
+#!/bin/sh
+
+echo Running base post install actions
+echo Arguments: "$*"
+echo
+env
+
+# Create folders
+if [ ! -d "$INSTALL_DIR"/tmp ]; then
+  echo mkdir -p "$INSTALL_DIR"/tmp
+  mkdir -p "$INSTALL_DIR"/tmp
+  if [ $? -ne 0 ]; then
+    echo Unable to create data folder "$INSTALL_DIR"/tmp
+  fi
+fi
+
+###############################
+# OS X
+###############################
+if [ "$DISTRIBUTION" = "osx" ]; then
+  if [ -h "$HOME_DIR/Desktop/$APP_FOLDER_NAME" -a ! -h "$HOME_DIR/Desktop/$APP_FOLDER_NAME/start_cassandra" ]; then
+    echo rm "$HOME_DIR/Desktop/$APP_FOLDER_NAME"
+    rm "$HOME_DIR/Desktop/$APP_FOLDER_NAME"
+  fi
+  if [ ! -f "$HOME_DIR/Desktop/$APP_FOLDER_NAME" ]; then
+    echo ln -s "$INSTALL_DIR/Desktop" "$HOME_DIR/Desktop/$APP_FOLDER_NAME"
+    ln -s "$INSTALL_DIR/Desktop" "$HOME_DIR/Desktop/$APP_FOLDER_NAME"
+  else
+    echo Not creating desktop link as there is already an object with that name
+  fi
+fi
+
+# Set up Applications folder
+if [ "$INSTALL_DIR" != "" -a -d "$INSTALL_DIR" ]; then
+  echo putting symlinks in "$DESKTOP_DIR"
+  if [ "$DESKTOP_DIR" != "" ]; then
+    if [ ! -d "$DESKTOP_DIR" ]; then
+      echo mkdir -p "$DESKTOP_DIR"
+      mkdir -p "$DESKTOP_DIR"
+    fi
+
+    if [ -d "$DESKTOP_DIR" ]; then
+      echo Creating desktop items
+
+      # Slightly special behavior here... the uninstaller isn't there yet. So
+      # no existence check.
+      echo Linking to uninstaller
+      if [ -h "$INSTALL_DIR/Deskktop/uninstall$APP_EXT" ]; then
+        echo rm -f "$DESKTOP_DIR/uninstall$APP_EXT"
+        rm -f "$DESKTOP_DIR/uninstall$APP_EXT"
+      fi
+      echo ln -s "$INSTALL_DIR/uninstall$APP_EXT" "$DESKTOP_DIR/uninstall$APP_EXT"
+      ln -s "$INSTALL_DIR/uninstall$APP_EXT" "$DESKTOP_DIR/uninstall$APP_EXT"
+
+      if [ -h "$DESKTOP_DIR/Online Documentation" ]; then
+        echo rm -f "$DESKTOP_DIR/Online Documentation"
+        rm -f "$DESKTOP_DIR/Online Documentation"
+      fi
+      echo ln -s "$INSTALL_DIR/bin/Online Documentation" "$DESKTOP_DIR/Online Documentation"
+      ln -s "$INSTALL_DIR/bin/Online Documentation" "$DESKTOP_DIR/Online Documentation"
+      if [ -h "$DESKTOP_DIR/Register With DataStax" ]; then
+        echo rm -f "$DESKTOP_DIR/Register With DataStax"
+        rm -f "$DESKTOP_DIR/Register With DataStax"
+      fi
+      echo ln -s "$INSTALL_DIR/bin/Register With DataStax" "$DESKTOP_DIR/Register With DataStax"
+      ln -s "$INSTALL_DIR/bin/Register With DataStax" "$DESKTOP_DIR/Register With DataStax"
+    else
+      echo Unable to create desktop folder "$DESKTOP_DIR"
+    fi
+  fi
+ 
+  if [ "$APPLICATIONS_DIR" != "" -a -d "$APPLICATIONS_DIR" ]; then
+    if [ -h "$APPLICATIONS_DIR/$APP_FOLDER_NAME" ]; then
+      echo rm "$APPLICATIONS_DIR/$APP_FOLDER_NAME"
+      rm "$APPLICATIONS_DIR/$APP_FOLDER_NAME"
+    fi
+    if [ ! -h "$APPLICATIONS_DIR/$APP_FOLDER_NAME" ]; then
+      echo ln -s "$INSTALL_DIR"/Desktop "$APPLICATIONS_DIR/$APP_FOLDER_NAME"
+      ln -s "$INSTALL_DIR"/Desktop "$APPLICATIONS_DIR/$APP_FOLDER_NAME"
+      if [ $? -ne 0 ]; then
+        echo Unable to create system Application folder. Falling back to user level
+        APPLICATIONS_DIR=$APPLICATIONS_FALLBACK_DIR
+        if [ -h "$APPLICATIONS_DIR/$APP_FOLDER_NAME" ]; then
+          echo rm "$APPLICATIONS_DIR/$APP_FOLDER_NAME"
+          rm "$APPLICATIONS_DIR/$APP_FOLDER_NAME"
+        fi
+        if [ ! -h "$APPLICATIONS_DIR/$APP_FOLDER_NAME" ]; then
+          echo ln -s "$INSTALL_DIR"/Desktop "$APPLICATIONS_DIR/$APP_FOLDER_NAME"
+          ln -s "$INSTALL_DIR"/Desktop "$APPLICATIONS_DIR/$APP_FOLDER_NAME"
+        else
+          echo Not creating Desktop symlink, object already exists
+        fi
+      fi
+    else
+      echo Not creating Desktop symlink, object already exists
+    fi
+  fi
+fi
+
+echo Running base post install actions DONE
+exit 0
+

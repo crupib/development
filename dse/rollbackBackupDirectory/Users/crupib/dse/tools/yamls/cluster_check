@@ -1,0 +1,126 @@
+#!/usr/bin/env python
+
+import re
+import shlex
+import subprocess
+import sys
+import yaml
+
+from utils import special_print
+
+
+def collect_yamls(ip_list, yaml_location):
+    """
+    Collect yamls from a list of known ips. Uses the same file location for all
+    nodes.
+    """
+
+    yamls = {}
+    for ip in ip_list:
+        process = subprocess.Popen(shlex.split('ssh %s "cat %s"' % (ip, yaml_location)), stdout=subprocess.PIPE)
+        read = process.communicate()
+        yaml_text = read[0]
+        yamls[ip] = {
+            'text': yaml_text,
+            'yaml': yaml.load(yaml_text)
+        }
+    return yamls
+
+
+def get_ip_list(node_list):
+    """
+    Get the list of nodes from a file, or by running `nodetool status`.
+    """
+
+    if node_list:
+        node_list = open(node_list).read().strip()
+        node_list = node_list.split('\n')
+        return filter(None, node_list)
+    else:
+        process = subprocess.Popen(shlex.split('nodetool status'), stdout=subprocess.PIPE)
+        ring_output = process.communicate()[0]
+        return re.findall(r'(?:[\d]{1,3})\.(?:[\d]{1,3})\.(?:[\d]{1,3})\.(?:[\d]{1,3})', ring_output)
+
+
+def find_differences(ip_list, yamls):
+    """
+    Find differences in a collection of yamls.
+    """
+
+    differences = {}
+    base_text = yamls[ip_list[0]]['text']
+    for base_ip in ip_list:
+        that_yaml = yamls[base_ip]['yaml']
+
+        for ip in ip_list:
+            # Skip self comparison
+            if ip == base_ip:
+                continue
+
+            this_yaml = yamls[ip]['yaml']
+
+            # iterate over all those keys
+            for that_key in that_yaml:
+                # check if that key exists in this yaml
+                try:
+                    this_value = this_yaml[that_key]
+                except KeyError:
+                    this_value = None
+
+                # check for differences between this and that value
+                if this_value != that_yaml[that_key]:
+                    # find the location of the key based on the base_text's position
+                    key_index = base_text.find(that_key)
+
+                    if not key_index in differences:
+                        differences[key_index] = {that_key: {}}
+
+                    # this maybe executed multiple times, but dict overwrites 
+                    # are almost free and it ensures a full report without 
+                    # special edge casing
+                    for ip in ip_list:
+                        try:
+                            differences[key_index][that_key][ip] = yamls[ip]['yaml'][that_key]
+                        except KeyError:
+                            differences[key_index][that_key][ip] = None
+    return differences
+
+
+def report(ip_list, differences):
+    """
+    Print report of differing values.
+    """
+
+    if not differences:
+        sys.exit('No differences found... at a minimum listen_address should have been unique on each machine.')
+
+    different_keys = differences.keys()
+    different_keys.sort()
+
+    for key in different_keys:
+        difference = differences[key]
+
+        yaml_key = difference.keys()[0]
+        special_print(' %s ' % yaml_key, 'header')
+
+        for ip in ip_list:
+            special_print('    %s' % ip, 'ip_address')
+            print difference[yaml_key][ip]
+        print
+
+
+def main():
+    if len(sys.argv) < 2:
+        sys.exit('Usage: %s </path/to/cassandra.yaml> [`nodetool status` output file]\n' % __file__)
+
+    ip_list = get_ip_list(sys.argv[2] if len(sys.argv) >= 3 else None)
+
+    yamls = collect_yamls(ip_list, sys.argv[1])
+
+    differences = find_differences(ip_list, yamls)
+
+    report(ip_list, differences)
+
+
+if __name__ == "__main__":
+    main()

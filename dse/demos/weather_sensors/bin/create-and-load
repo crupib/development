@@ -1,0 +1,30 @@
+#!/bin/sh
+
+if [ -z "$@" ]; then
+    unset DSE_PATH
+    if ! command -v dse > /dev/null; then
+        echo "Please make sure 'dse' is in the system path, then try again"
+        exit 1
+    fi
+else
+    DSE_PATH=$@/bin/
+fi
+
+set -x #echo on
+
+BASEDIR=$(cd "$(dirname $0)/../"; pwd)
+
+echo "Create Cassandra schema..."
+${DSE_PATH}cqlsh `hostname -f` -f "$BASEDIR"/resources/create-and-load.ddl
+
+echo "Load data from csv files..."
+${DSE_PATH}cqlsh `hostname -f` -e "COPY weathercql.station (stationid,location) FROM '"$BASEDIR"/resources/station.csv' WITH HEADER='true';"
+${DSE_PATH}cqlsh `hostname -f` -e "COPY weathercql.monthly (stationid, metric, date, location, max, mean, median, min, percentile1, percentile5, percentile95, percentile99, total) FROM '"$BASEDIR"/resources/monthly.csv' WITH HEADER='true';"
+${DSE_PATH}cqlsh `hostname -f` -e "COPY weathercql.daily (stationid, metric, date, location, max, mean, median, min, percentile1, percentile5, percentile95, percentile99, total) FROM '"$BASEDIR"/resources/daily.csv' WITH HEADER='true';"
+
+echo "Copy csv files to Hadoop..."
+${DSE_PATH}dse hadoop fs -mkdir /datastax/demos/weather_sensors/
+${DSE_PATH}dse hadoop fs -copyFromLocal "$BASEDIR"/resources/byoh-*.csv /datastax/demos/weather_sensors/
+
+echo "Create Hadoop schema and load BYOH data from additional csv files..."
+${DSE_PATH}dse hive -f "$BASEDIR"/resources/create-and-load-byoh-tables.hql

@@ -1,0 +1,76 @@
+
+<!doctype html>
+<head>
+    <title>DataStax Weather Demo{% block title %}{% endblock %}</title>
+    <link rel="shortcut icon" href="{{url_for('static', filename='img/favicon.ico') }}">
+
+    <link type="text/css" rel="stylesheet" href="{{url_for('static', filename='css/bootstrap.min.css') }}">
+    <link type="text/css" rel="stylesheet" href="{{url_for('static', filename='css/rickshaw.min.css') }}">
+    <link type="text/css" rel="stylesheet" href="{{url_for('static', filename='css/rickshaw-detail.css') }}">
+    <link type="text/css" rel="stylesheet" href="{{url_for('static', filename='css/extensions.css') }}">
+    <link type="text/css" rel="stylesheet" href="{{url_for('static', filename='css/bootstrap-slider.css') }}">
+    <link type="text/css" rel="stylesheet" href="{{url_for('static', filename='css/flipclock.css') }}">
+    <link type="text/css" rel="stylesheet" href="{{url_for('static', filename='css/style.css') }}">
+
+    <script src="{{url_for('static', filename='js/lib/jquery.js') }}"></script>
+    <script src="{{url_for('static', filename='js/lib/bootstrap.min.js') }}"></script>
+    <script src="{{url_for('static', filename='js/lib/bootstrap-dropdown.js') }}"></script>
+    <script src="{{url_for('static', filename='js/lib/bootstrap-slider.js') }}"></script>
+    <script src="{{url_for('static', filename='js/lib/d3.v3.js') }}"></script>
+    <script src="{{url_for('static', filename='js/lib/rickshaw.min.js') }}"></script>
+    <script src="{{url_for('static', filename='js/lib/moment.min.js') }}"></script>
+    <script src="{{url_for('static', filename='js/lib/flipclock.min.js') }}"></script>
+    <script src="{{url_for('static', filename='js/weather-demo.js') }}"></script>
+</head>
+<body>
+    <nav class="navbar navbar-default" role="navigation">
+        <div class="container-fluid">
+            <div class="navbar-header">
+                <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+                    <span class="sr-only">Toggle navigation</span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                </button>
+                <a class="navbar-brand" href="/">DataStax Weather Demo</a>
+            </div>
+
+            <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+                <ul class="nav navbar-nav">
+                    <li class="dropdown {% block reports %}{% endblock %}">
+                        <a href="#" class="dropdown-toggle" data-toggle="dropdown">Near-Real Time Reports <b class="caret"></b></a>
+                        <ul class="dropdown-menu">
+                            {% if stations %}
+                                {% for record in stations %}
+                                    <li><a href="{{ url_for('report', stationid=record.stationid, rollup='monthly')}}">{{ record.location }} ({{ record.stationid }})</a></li>
+                                {% endfor %}
+                            {% endif %}
+                        </ul>
+                    </li>
+                    <li class="{% block sample_queries %}{% endblock %}"><a href="{{ url_for('sample_queries')}}">Sample Live Queries</a></li>
+                    <li class="{% block custom_queries %}{% endblock %}"><a href="{{ url_for('custom_queries')}}">Custom Live Queries</a></li>
+                    <li class="{% block cfs_queries %}{% endblock %}"><a href="{{ url_for('cfs_queries')}}">CFS Live Queries</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        {%  if error_message %}
+            <div class="alert alert-danger">{{ error_message }}</div>
+        {% endif %}
+
+        <div id="content">{% block content %}{% endblock %}</div>
+    </div>
+
+    <script>
+        $('.btn').button();
+        $('.dropdown-toggle').dropdown();
+        $('.slider').slider();
+        $('#elapsed-time-message').html(function(index,html) {
+           return html.replace(/127.0.0.1/g, window.location.hostname);
+        });
+    </script>
+
+    {% block page_script %}{% endblock %}
+</body>

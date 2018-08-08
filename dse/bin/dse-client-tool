@@ -1,0 +1,92 @@
+#!/bin/sh
+
+export DSE_TOOL=1
+
+args=""
+
+parseDseClientToolArgs() {
+case "$1" in
+    -u)
+        shift
+        export dse_username="$1"
+        shift
+        parseDseClientToolArgs "$@"
+        ;;
+    -p)
+        shift
+        export dse_password="$1"
+        shift
+        parseDseClientToolArgs "$@"
+        ;;
+    *)
+        args="$@"
+        ;;
+esac
+}
+
+parseDseClientToolArgs "$@"
+
+
+if [ -f /etc/default/dse ]; then
+  . /etc/default/dse
+fi
+
+if [ "$DSE_ENV_LOADED" != 1 ]; then
+    if [ -z "$DSE_ENV" ]; then
+        for include in "$DSE_HOME"/bin/dse-env.sh \
+                       "$HOME/.dse-env.sh" \
+                       "`dirname "$0"`/dse-env.sh" \
+                       "/etc/dse/dse-env.sh"; do
+            if [ -r "$include" ]; then
+                DSE_ENV="$include"
+                break
+            fi
+        done
+    fi
+
+    if [ -z "$DSE_ENV" ]; then
+        echo "DSE_ENV could not be determined."
+        exit 1
+    elif [ -r "$DSE_ENV" ]; then
+        . "$DSE_ENV"
+    else
+        echo "Location pointed by DSE_ENV not readable: $DSE_ENV"
+        exit 1
+    fi
+else
+    #include the DSERC environment script (pulls in credentials for basic authentication)
+    #note that it would be better if the functions were all grouped into a single script
+    #that could get loaded by all other scripts
+    if [ -r "$DSE_HOME/bin/dserc-env.sh" ]; then
+        . "$DSE_HOME/bin/dserc-env.sh"
+    elif [ -r "$DSE_CONF/dserc-env.sh" ]; then
+        . "$DSE_CONF/dserc-env.sh"
+    else
+        echo "Location pointed to by DSE_HOME/bin/dserc-env.sh or DSE_CONF/bin/dserc-env.sh not readable"
+        exit 1
+    fi
+fi
+
+# Need Windows-style paths under cygwin
+case "`uname`" in
+    CYGWIN*)
+        CLASSPATH="`cygpath -p -w "$CLASSPATH"`"
+        CASSANDRA_CONF="`cygpath -p -w "$CASSANDRA_CONF"`"
+    ;;
+esac
+
+if [ -n "$DSE_SASL_PROTOCOL" ]; then
+    DSE_OPTS="$DSE_OPTS -Ddse.sasl.protocol=$DSE_SASL_PROTOCOL"
+fi
+
+if [ -n "$DSE_LOGIN_CONFIG" ]; then
+    DSE_OPTS="$DSE_OPTS -Djava.security.auth.login.config=$DSE_LOGIN_CONFIG"
+fi
+
+DSE_CLIENT_TOOL_OPTS="$DSE_CLIENT_TOOL_OPTS -Dstorage-config=$CASSANDRA_CONF"
+DSE_CLIENT_TOOL_OPTS="$DSE_CLIENT_TOOL_OPTS -Dlogback.configurationFile=logback-tools.xml"
+DSE_CLIENT_TOOL_OPTS="$DSE_CLIENT_TOOL_OPTS -Ddse.client.configuration.impl=com.datastax.bdp.transport.client.HadoopBasedClientConfiguration"
+
+CP="$DSE_CLASSPATH:$CASSANDRA_CLASSPATH:$HADOOP_CLASSPATH:$SPARK_LIB_CLASSPATH"
+
+exec "$JAVA" $JAVA_AGENT $JVM_OPTS $DSE_OPTS $DSE_CLIENT_TOOL_OPTS -cp "$CP" com.datastax.bdp.tools.DseClientTool $DSE_CLIENT_TOOL_CREDENTIALS $args

@@ -1,0 +1,10 @@
+#!/bin/sh
+
+INSTALL_DIR="/Users/crupib/dse"
+"$INSTALL_DIR"/tools/pfc/preflight_check -f > /tmp/pfcrun.out 2>&1
+rm -f "$INSTALL_DIR"/tools/pfc/benchmarks/*.pyc
+rm -f "$INSTALL_DIR"/tools/pfc/checks/*.pyc
+if [ -f /tmp/pfcrun.out ]; then
+  chmod a+rw /tmp/pfcrun.out
+fi
+

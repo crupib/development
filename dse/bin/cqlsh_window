@@ -1,0 +1,18 @@
+#!/bin/sh
+
+INSTALL_DIR="/Users/crupib/dse"
+LISTEN_PORT=9160
+LISTEN_ADDRESS=127.0.0.1
+if [ -x "/usr/bin/sw_vers" ]; then
+  "$INSTALL_DIR/bin/cqlsh" "$@" "$LISTEN_ADDESS" "$LISTEN_PORT"
+  STATUS=$?
+else
+  xterm -e "$INSTALL_DIR/bin/cqlsh" "$@" "$LISTEN_ADDESS" "$LISTEN_PORT" &
+  STATUS=$?
+fi
+if [ $STATUS -ne 0 ]; then
+  echo cqlsh error, please hit enter
+  read IGNORE
+  echo "$IGNORE"
+fi
+

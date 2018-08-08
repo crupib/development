@@ -1,0 +1,65 @@
+apply plugin: 'scala'
+apply plugin:'application'
+
+mainClassName = 'com.datastax.bdp.spark.streaming.kafka.SparkStreamingKafkaDemo'
+
+configurations {
+    provided
+    compile.extendsFrom provided
+}
+
+jar {
+    zip64 = true
+    destinationDir = projectDir
+    baseName = 'spark-streaming-kafka-demo'
+    manifest.attributes("Main-Class": mainClassName)
+    from {
+        (configurations.runtime - configurations.provided).collect {
+            it.isDirectory() ? it : zipTree(it)
+        }
+    }
+}
+
+ext {
+    scoptVersion = '3.2.0'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    provided "org.scala-lang:scala-compiler:${scalaVersion}"
+    provided "org.scala-lang:scala-library:${scalaVersion}"
+    provided "org.scala-lang:scala-reflect:${scalaVersion}"
+
+    compile ("com.datastax.spark:spark-cassandra-connector-embedded_${scalaLibVersion}:${sparkCassandraConnectorVersion}") {
+        exclude group: 'org.jboss.logging', module: 'jboss-logging'
+        exclude group: 'org.apache.hadoop' // Conflicts with DSE Hadoop
+    }
+    compile "com.datastax.spark:spark-streaming-kafka_${scalaLibVersion}:${sparkVersion}"
+    compile "com.github.scopt:scopt_${scalaLibVersion}:${scoptVersion}"
+
+    if (parent) {
+        provided project(':dse-spark')
+    } else {
+        ['resources/dse/lib',
+         'resources/spark/lib',
+         'resources/driver/lib',
+         'resources/cassandra/lib',
+         'resources/hadoop',
+         'resources/hadoop/lib',
+         'lib',
+         'build'].each { dir ->
+            provided fileTree(dir: "../../$dir", include: '*.jar')
+        }
+    }
+
+}
+
+clean.delete << jar.archiveName
+
+defaultTasks 'assemble'
+
+// assemble just jar, ignore building other artifacts introduced by application plugin
+assemble.dependsOn = [ jar ]

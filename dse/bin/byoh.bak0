@@ -1,0 +1,266 @@
+#!/bin/sh
+
+if [ -z "$BASH_VERSION" ]; then
+    exec bash "$0" "$@"
+    exit 1  # Will only get here if exec itself fails to run
+fi
+
+if [ -z "$BYOH_ENV" ]; then
+    for include in "$HOME/.byoh-env.sh" \
+                   "`dirname \"$0\"`/byoh-env.sh" \
+                   "/etc/dse/byoh-env.sh"; do
+        if [ -r "$include" ]; then
+            BYOH_ENV="$include"
+            break
+        fi
+    done
+fi
+
+if [ -z "$BYOH_ENV" ]; then
+    echo "BYOH_ENV could not be determined."
+    exit 1
+elif [ -r "$BYOH_ENV" ]; then
+    . "$BYOH_ENV"
+else
+    echo "Location pointed by BYOH_ENV not readable: $BYOH_ENV"
+    exit 1
+fi
+
+if [ -z "$DSE_OPTS" ]; then
+    DSE_OPTS="-Dcassandra.config.loader=com.datastax.bdp.config.DseConfigurationLoader"
+fi
+
+DSE_OPTS="$DSE_OPTS -Dlogback.configurationFile=logback-tools.xml"
+
+# the packaged installers don't have a resources directory
+# in this case we need to substitute the directory with an
+# empty string
+
+if [ -d "$DSE_HOME/resources" ]; then
+    RESOURCES_DIR="$DSE_HOME/resources"
+else
+    RESOURCES_DIR="$DSE_HOME"
+fi
+
+#set up the hadoop environment if hadoop is installed on this machine in the default location
+if [ -f /etc/default/hadoop ];
+then
+    . /etc/default/hadoop
+else
+    export HADOOP_HOME="$HADOOP_PATH_HOME"
+    export YARN_CONF_DIR="$HADOOP_CONF_DIR"
+    export HADOOP_MAPRED_HOME="$HADOOP_PATH_HOME"
+    export HADOOP_COMMON_HOME="$HADOOP_HOME"
+    export HADOOP_HDFS_HOME="$HADOOP_HOME"
+    export YARN_HOME="$HADOOP_HOME"
+
+#JT Configuration Below
+#This directory is for the JT launcher, for legacy Hadoop this needs to point to the mapreduce jars
+    export JT_HADOOP_HOME="$HADOOP_PATH_HOME/share/hadoop/mapreduce1"
+# This points to the configuration directory for the jobtracker
+    export HADOOP_CONF_DIR="$HADOOP_PATH_HOME/etc/hadoop"
+
+fi
+
+export PIG_CLASSPATH="$HADOOP_CONF_DIR"
+
+#we need to load the dependencies for the hive driver
+if [ -z "$DSE_LIB" ]; then
+    for dir in "$DSE_HOME/lib" \
+        "/usr/share/dse" \
+        "/usr/share/dse/common" \
+        "$DSE_HOME/build" \
+        "$DSE_HOME/build/lib/jars" \
+        "$DSE_HOME/common" \
+        "$DSE_HOME" \
+        "$RESOURCES_DIR/cassandra/lib" \
+        "$RESOURCES_DIR/dse/lib" \
+        "$RESOURCES_DIR/driver/lib" \
+        "/opt/dse" \
+        "/opt/dse/common"; do
+
+        if [ -r "$dir" ]; then
+            export DSE_LIB="$DSE_LIB
+                            $dir"
+        fi
+    done
+fi
+
+#initialize it
+
+for dir in $DSE_LIB; do
+    for jar in "$dir"/*.jar; do
+    #all jars excluding dse logging
+    if [ -r "$jar" ] && [[ ! "$jar" =~ "jcl-over-slf4j" ]]; then
+        if [ -z "$DSE_CLASSPATH" ]
+	    then
+	        DSE_CLASSPATH="$jar"
+	    else
+	        DSE_CLASSPATH="$DSE_CLASSPATH:$jar"
+        fi
+    fi
+    done
+done
+
+# We need to build the hive dependencies
+if [ -z "$HIVE_LIB" ]; then
+    for dir in "$HIVE_HOME/lib"; do
+        if [ -r "$dir" ]; then
+            export HIVE_LIB="$HIVE_LIB
+                            $dir"
+        fi
+    done
+fi
+
+for dir in $HIVE_LIB; do
+    for jar in "$dir"/*.jar; do
+    if [ -r "$jar" ]; then
+        if [ -z "$HIVE_JAR" ]
+            then
+                HIVE_JAR="$jar"
+            else
+                HIVE_JAR="$HIVE_JAR:$jar"
+        fi
+    fi
+    done
+done
+
+export HADOOP_OPTS="$HADOOP_OPTS $DSE_OPTS"
+export PIG_OPTS="$PIG_OPTS $DSE_OPTS"
+export MAHOUT_OPTS="$MAHOUT_OPTS $DSE_OPTS"
+
+for dir in "$CASSANDRA_DRIVER"/lib; do
+    for jar in "$dir"/*.jar; do
+    if [ -r "$jar" ]; then
+        if [ -z "$DRIVER_JAR" ]
+            then
+                DRIVER_JAR="$jar"
+            else
+                DRIVER_JAR="$DRIVER_JAR:$jar"
+        fi
+    fi
+    done
+done
+
+case $1 in
+    pig)
+        shift;
+
+       export HADOOP_OPTS="$HADOOP_OPTS $JAVA_AGENT"
+       export HADOOP_CLIENT_OPTS="-Xmx1G -Djava.system.class.loader=$DSE_CLIENT_CLASSLOADER $HADOOP_CLIENT_OPTS"
+       export HADOOP_OPTS="$HADOOP_OPTS -Djava.library.path=$JAVA_LIBRARY_PATH"
+       export HADOOP_OPTS="$HADOOP_OPTS -Djava.system.class.loader=$DSE_CLIENT_CLASSLOADER"
+
+       export DRIVER_CLASSPATH=$DRIVER_JAR
+       export HADOOP_CLASSPATH=
+       export PIG_CLASSPATH="$PIG_CLASSPATH:$DSE_CLASSPATH:$DSE_CONF_DIR:$RESOURCES_DIR/cassandra/lib:$CASSANDRA_CONF"
+       export DSE_CLASSPATH="$DSE_CLASSPATH:$CASSANDRA_CONF/cassandra.yaml"
+
+       export PIG_OPTS="$PIG_OPTS -Dmapred.child.env=DSE_CLASSPATH=$DSE_CLASSPATH,DRIVER_CLASSPATH=$DRIVER_CLASSPATH"
+       export PIG_OPTS="$PIG_OPTS -Dmapreduce.map.env=DSE_CLASSPATH=$DSE_CLASSPATH,DRIVER_CLASSPATH=$DRIVER_CLASSPATH"
+       export PIG_OPTS="$PIG_OPTS -Dmapreduce.reduce.env=DSE_CLASSPATH=$DSE_CLASSPATH,DRIVER_CLASSPATH=$DRIVER_CLASSPATH"
+
+       export MAPRED_JAVA_OPTS="-Dmapred.child.java.opts=-Ddse.client.configuration.impl=com.datastax.bdp.transport.client.HadoopBasedClientConfiguration -Djava.system.class.loader=$DSE_CLIENT_CLASSLOADER -Dcassandra.config=file://$CASSANDRA_CONF/cassandra.yaml"
+       export REDUCE_OPTS="-Dmapreduce.reduce.java.opts=-Ddse.client.configuration.impl=com.datastax.bdp.transport.client.HadoopBasedClientConfiguration -Djava.system.class.loader=$DSE_CLIENT_CLASSLOADER -Dcassandra.config=file://$CASSANDRA_CONF/cassandra.yaml"
+       export MAP_OPTS="-Dmapreduce.map.java.opts=-Ddse.client.configuration.impl=com.datastax.bdp.transport.client.HadoopBasedClientConfiguration -Djava.system.class.loader=$DSE_CLIENT_CLASSLOADER -Dcassandra.config=file://$CASSANDRA_CONF/cassandra.yaml"
+       export PIG_OPTS="$PIG_OPTS -Dudf.import.list=org.apache.cassandra.hadoop.pig" # -Dpig.temp.dir=/user/`whoami`/tmp/pig"
+       export PIG_OPTS="$PIG_OPTS -Dpig.additional.jars=$DSE_CLASSPATH"
+       export PIG_OPTS="$PIG_OPTS -Dcassandra.client.transport.factory=com.datastax.bdp.transport.client.TDseClientTransportFactory"
+
+       export PIG_OPTS="$PIG_OPTS -Dmapreduce.job.hdfs-servers=$DATA_NODE_LIST"
+
+       export DSE_CLASSPATH="$DSE_CLASSPATH:DSE_CONF_DIR:$RESOURCES_DIR/cassandra/lib"
+
+       #cloudera pig and Cassandra works together only on this version of guava
+       export PIG_CLASSPATH="$RESOURCES_DIR/pig/lib/guava-15.0.jar:$PIG_CLASSPATH"
+ 
+       exec ${PIG_HOME}/bin/pig $HADOOP_CREDENTIALS "$MAP_OPTS" "$REDUCE_OPTS" "$MAPRED_JAVA_OPTS" "$@"
+    ;;
+    hive)
+        shift
+        echo "BYOH Hive functionality is deprecated and may be removed in a future release." 1>&2
+
+        export HADOOP_OPTS="$HADOOP_OPTS $JAVA_AGENT"
+        # Folder containing extra ibraries required for hive compilation/execution can be controlled by:
+        #this is being clobbered right here, I don't think it's set previously though
+        export HIVE_CLASSPATH="$DSE_CLASSPATH:$CASSANDRA_CONF:$DSE_CONF_DIR:$RESOURCES_DIR/cassandra/lib"
+
+        export DRIVER_CLASSPATH=$DRIVER_JAR
+
+        export DSE_CLASSPATH=$HIVE_CLASSPATH
+
+        export HADOOP_CLASSPATH=$HIVE_CONNECTOR_CLASSPATH:$HIVE_JAR:$DSE_CLASSPATH
+
+        export HADOOP_CLIENT_OPTS="-Xmx1G -Djava.system.class.loader=$DSE_CLIENT_CLASSLOADER $HADOOP_CLIENT_OPTS"
+        export HADOOP_OPTS="$HADOOP_OPTS -Djava.library.path=$JAVA_LIBRARY_PATH"
+        export HADOOP_OPTS="$HADOOP_OPTS -Djava.system.class.loader=$DSE_CLIENT_CLASSLOADER"
+
+        export HIVE_OPTS="$HIVE_OPTS -hiveconf mapred.child.java.opts=-Djava.system.class.loader=$DSE_CLIENT_CLASSLOADER"
+        export HIVE_OPTS="$HIVE_OPTS -hiveconf mapreduce.map.java.opts=-Djava.system.class.loader=$DSE_CLIENT_CLASSLOADER"
+        export HIVE_OPTS="$HIVE_OPTS -hiveconf mapreduce.reduce.java.opts=-Djava.system.class.loader=$DSE_CLIENT_CLASSLOADER"
+
+        #This sets the environment variable on the child so that the DSE_CLIENT_CLASSLOADER will load the correct paths for DSE code
+        export HIVE_OPTS="$HIVE_OPTS -hiveconf mapred.child.env=DSE_CLASSPATH=$DSE_CLASSPATH,HADOOP_CLASSPATH=$HADOOP_CLASSPATH,DRIVER_CLASSPATH=$DRIVER_CLASSPATH"
+        export HIVE_OPTS="$HIVE_OPTS -hiveconf mapreduce.map.env=DSE_CLASSPATH=$DSE_CLASSPATH,HADOOP_CLASSPATH=$HADOOP_CLASSPATH,DRIVER_CLASSPATH=$DRIVER_CLASSPATH"
+        export HIVE_OPTS="$HIVE_OPTS -hiveconf mapreduce.reduce.env=DSE_CLASSPATH=$DSE_CLASSPATH,HADOOP_CLASSPATH=$HADOOP_CLASSPATH,DRIVER_CLASSPATH=$DRIVER_CLASSPATH"
+        export HIVE_OPTS="$HIVE_OPTS -hiveconf cassandra.client.transport.factory=com.datastax.bdp.transport.client.TDseClientTransportFactory"
+
+        export HIVE_OPTS="$HIVE_OPTS -hiveconf mapreduce.user.classpath.first=false"
+        export HIVE_OPTS="$HIVE_OPTS -hiveconf cassandra.partitioner=$HIVE_PARTITIONER"
+
+        #These two options are needed if HDFS is no local to this node
+        if [ -n "$DATA_NODE_LIST" ]; then
+            export HIVE_OPTS="$HIVE_OPTS -hiveconf mapreduce.job.hdfs-servers=$DATA_NODE_LIST"
+        fi
+
+        if [ -n "NAME_NODE" ]; then
+            export HIVE_OPTS="$HIVE_OPTS -hiveconf hive.metastore.warehouse.dir=hdfs://$NAME_NODE/user/hive/warehouse"
+        fi
+
+        export HIVE_AUX_JARS_PATH=$HIVE_CLASSPATH:$CASSANDRA_CONF/cassandra.yaml:$HIVE_CONNECTOR_CLASSPATH:$HIVE_JAR
+
+        #redefine HIVE_AUX_JARS_PATH for old hive versions
+        if [ "$HIVE_VERSION" = "0.11.0"  -o "$HIVE_VERSION" = "0.10.0-cdh" ]; then
+           mkdir -p "$HIVE_AUX_JARS_DIR"
+           echo "$HIVE_AUX_JARS_PATH" |tr ":" "\n" |while read i; do
+               if [ -f "$i" ]; then
+                   cp "$i" "$HIVE_AUX_JARS_DIR";
+               fi
+           done;
+           export HIVE_AUX_JARS_PATH="$HIVE_AUX_JARS_DIR"
+        fi
+
+        exec $HIVE_HOME/bin/hive -hiveconf hive.stats.autogather=false "$@" $HIVE_CREDENTIALS
+    ;;
+    mahout)
+        shift
+        export HADOOP_OPTS="$HADOOP_OPTS $JAVA_AGENT"
+        export HADOOP_OPTS="$HADOOP_OPTS -Djava.system.class.loader=$DSE_CLIENT_CLASSLOADER"
+        export HADOOP_OPTS="$HADOOP_OPTS -Djava.library.path=$JAVA_LIBRARY_PATH"
+
+        export HADOOP_OPTS="$HADOOP_OPTS -Djava.system.class.loader=$DSE_CLIENT_CLASSLOADER"
+        export MAHOUT_OPTS="$MAHOUT_OPTS -Dmapred.child.env=DSE_CLASSPATH=$DSE_CLASSPATH"
+
+        export MAHOUT_OPTS="$MAHOUT_OPTS -Dmapred.child.java.opts=-Djava.system.class.loader=$DSE_CLIENT_CLASSLOADER"
+        export MAHOUT_OPTS="$MAHOUT_OPTS -Dmapreduce.map.java.opts=-Djava.system.class.loader=$DSE_CLIENT_CLASSLOADER"
+        export MAHOUT_OPTS="$MAHOUT_OPTS -Dmapreduce.reduce.java.opts=-Djava.system.class.loader=$DSE_CLIENT_CLASSLOADER"
+
+        export MAHOUT_OPTS="$MAHOUT_OPTS -Dmapreduce.map.env=DSE_CLASSPATH=$DSE_CLASSPATH"
+        export MAHOUT_OPTS="$MAHOUT_OPTS -Dmapreduce.reduce.env=DSE_CLASSPATH=$DSE_CLASSPATH"
+        export MAHOUT_OPTS="$MAHOUT_OPTS -Dcassandra.client.transport.factory=com.datastax.bdp.transport.client.TDseClientTransportFactory"
+        export MAHOUT_OPTS="$MAHOUT_OPTS -Dmapreduce.job.hdfs-servers=$DATA_NODE_LIST"
+
+        export HADOOP_CLASSPATH="$DSE_CLASSPATH:$DSE_CONF_DIR:$RESOURCES_DIR/cassandra/lib:$RESOURCES_DIR/cassandra/conf/cassandra.yaml"
+
+        echo "Running: $MAHOUT_HOME/bin/mahout $@"
+        $MAHOUT_HOME/bin/mahout "$@"
+        exit 0
+    ;;
+    tasktracker)
+        export HADOOP_HOME=$JT_HADOOP_HOME
+        exec $HADOOP_PATH_HOME/bin-mapreduce1/hadoop tasktracker "$@"
+    ;;
+    nodemanager)
+        exec ${HADOOP_HOME}/bin/yarn nodemanager "$@"
+    ;;
+esac

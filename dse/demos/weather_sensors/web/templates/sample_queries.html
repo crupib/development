@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %} - Sample Queries{% endblock %}
+{% block sample_queries %}active{% endblock %}
+
+
+{% block content %}
+    <form class="form-horizontal" id="customhql" role="form" method="post">
+        <div class="form-group">
+            <label for="samplescript" class="col-sm-2 control-label">Select Sample Script</label>
+            <div class="col-sm-9">
+                <select size="7" name="samplescript" id="samplescript">
+                    <option value="2">Find correlation of median temperatures between two locations on a monthly scale</option>
+                    <option value="1">Find correlation of median temperatures between two locations on a daily scale</option>
+                    <option value="3">Find correlation between temperature and humidity for the same location on a monthly scale</option>
+                    <option value="6">Find correlation between temperature and humidity for the same location on a daily scale</option>
+                    <option value="7">Find correlation between temperature and humidity for the same location on a daily scale for "GKA"</option>
+                    <option value="4">Find correlation of multiple metrics between two locations on a monthly scale</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="query_string" class="col-sm-2 control-label">Hive Query</label>
+            <div class="col-sm-9">
+                <textarea class="form-control" rows="15" id="query_string" name="query_string">{% if query_string %}{{ query_string }}{% endif %}</textarea>
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="hql" class="col-sm-2 control-label">Hive Server</label>
+            <div class="col-sm-9">
+                <div class="btn-group" data-toggle="buttons" id="service-group">
+                    <label class="btn btn-default active">
+                        <input type="radio" name="service" id="spark-option" value="spark" checked>Spark SQL
+                    </label>
+                    <label class="btn btn-default">
+                        <input type="radio" name="service" id="hadoop-option" value="hadoop">Hive
+                    </label>
+                </div>
+            </div>
+        </div>
+        <div class="form-group">
+            <div class="col-sm-offset-2 col-sm-10">
+                <button type="submit" class="btn btn-default" id="submit-query">Submit Query</button>
+            </div>
+        </div>
+    </form>
+
+    <div id="status" class="col-sm-offset-2"></div>
+    <div class="col-sm-offset-2 col-sm-9">
+        <div id="elapsed-time-message" hidden>
+            <p>
+                The above query has been submitted using a Hive driver and will update as soon as
+                the query is completed. Typical times for running against the Spark SQL Thriftserver are under
+                20 seconds while Hadoop jobs routinely take 50 seconds when using a local, single-node
+                instance. Do note that data size, computing power, heap space, and cluster size affect
+                these times drastically.
+            </p>
+            <p>
+                In the event of a frozen request, double check the terminals that are running the Spark SQL Thriftserver
+                and Hadoop servers, or simply refresh the website and try again.
+            </p>
+            <p>
+                For more information on what's happening in the backend, checkout the following pages:
+            </p>
+            <ul>
+                <li><a href="http://127.0.0.1:7080/" target="_blank">Spark Master</a></li>
+                <li><a href="http://127.0.0.1:4040/" target="_blank">Spark Stages</a></li>
+                <li><a href="http://127.0.0.1:50030/" target="_blank">Hadoop Job Tracker</a></li>
+                <li><a href="http://127.0.0.1:50060/" target="_blank">Hadoop Task Tracker</a></li>
+            </ul>
+        </div>
+        <div id="elapsed-clock"></div>
+    </div>
+
+    <div class="col-sm-offset-2 col-sm-9">
+        <table class="table" id="data"></table>
+    </div>
+
+    <div id="chart_container">
+        <div id="chart"></div>
+    </div>
+{% endblock %}
+
+
+
+{% block page_script %}
+    <script>
+
+    var handleRequest = function (msg)  {
+        $('#elapsed-clock').empty();
+        $("#elapsed-time-message").hide();
+        $("#submit-query").removeAttr("disabled");
+
+        var json = jQuery.parseJSON(msg);
+
+        setErrorMessage(json['error_message']);
+        setElapsedTime(json['elapsed'], json['record_count']);
+
+        if (!json['error_message'])
+            buildTable(json['results']);
+    };
+
+    $(function() {
+        $("#submit-query").click(function() {
+            $("#chart").empty();
+            $("#data").empty();
+            $("#error-message").remove();
+            $("#elapsed-time").remove();
+            $("#submit-query").attr("disabled", "disabled");
+            $("#elapsed-time-message").show();
+
+            var clock = $('#elapsed-clock').FlipClock(0, {
+                clockFace: 'MinuteCounter'
+            });
+
+            $.ajax({
+                type: "POST",
+                url: "{{url_for('run_query')}}",
+                data: $("#customhql").serializeArray(),
+                success: handleRequest,
+                error: function(xhr, status, error) {
+                    setErrorMessage(xhr.responseText);
+                    $("#submit-query").removeAttr("disabled");
+                }
+            });
+            return false;
+        });
+    });
+
+    </script>
+
+    <script>
+
+    // House sample scripts for selection
+    $('#samplescript').change(function() {
+        var choice = $('#samplescript :selected').val();
+        if (choice == '1'){
+            $('#query_string').text(
+"SELECT a.stationid AS station_a,\n\
+b.stationid AS station_b,\n\
+CORR(a.median, b.median) AS corr_temperature\n\
+FROM weathercql.daily a JOIN weathercql.daily b\n\
+ON (a.date = b.date) AND (a.metric = b.metric)\n\
+WHERE (a.stationid > b.stationid) AND (a.metric = 'temperature') AND (b.metric = 'temperature')\n\
+GROUP BY a.stationid, b.stationid, a.metric;");
+        } else if (choice == '2') {
+            $('#query_string').text(
+"SELECT a.stationid AS station_a,\n\
+b.stationid AS station_b,\n\
+CORR(a.median, b.median) AS corr_temperature\n\
+FROM weathercql.monthly a JOIN weathercql.monthly b\n\
+ON (a.date = b.date) AND (a.metric = b.metric)\n\
+WHERE (a.stationid > b.stationid) AND (a.metric = 'temperature') AND (b.metric = 'temperature')\n\
+GROUP BY a.stationid, b.stationid, a.metric;");
+        } else if (choice == '3') {
+            $('#query_string').text(
+"SELECT a.stationid AS station,\n\
+CORR(a.median, b.median) as corr_temp_humid\n\
+FROM weathercql.monthly a JOIN weathercql.monthly b\n\
+ON (a.stationid = b.stationid) AND (a.date = b.date)\n\
+WHERE (a.metric = 'temperature') AND (b.metric = 'humidity')\n\
+GROUP BY a.stationid;");
+        } else if (choice == '4') {
+            $('#query_string').text(
+"SELECT a.stationid AS station_a,\n\
+b.stationid AS station_b,\n\
+CORR(CASE WHEN a.metric = 'temperature' THEN a.median END, CASE WHEN a.metric = 'temperature' THEN b.median END) AS corr_temperature,\n\
+CORR(CASE WHEN a.metric = 'humidity' THEN a.median END, CASE WHEN a.metric = 'humidity' THEN b.median END) AS corr_humidity\n\
+FROM weathercql.monthly a JOIN weathercql.monthly b\n\
+ON (a.date = b.date) AND (a.metric = b.metric)\n\
+WHERE (a.stationid > b.stationid)\n\
+AND ((a.metric = 'temperature') or (a.metric = 'humidity'))\n\
+AND ((b.metric = 'temperature') or (b.metric = 'humidity'))\n\
+GROUP BY a.stationid, b.stationid\n\
+ORDER BY station_a, station_b;");
+        } else if (choice == '5') {
+            $('#query_string').text(
+"SELECT a.stationid AS station_a,\n\
+b.stationid AS station_b,\n\
+a.metric AS metric,\n\
+CORR(a.median, b.median) AS corr_ab\n\
+FROM weathercql.daily a JOIN weathercql.daily b\n\
+ON (a.date = b.date) AND (a.metric = b.metric)\n\
+WHERE (a.stationid > b.stationid)\n\
+GROUP BY a.stationid, b.stationid, a.metric;");
+        } else if (choice == '6') {
+            $('#query_string').text(
+"SELECT a.stationid AS station,\n\
+CORR(a.median, b.median) as corr_temp_humid\n\
+FROM weathercql.daily a JOIN weathercql.daily b\n\
+ON (a.stationid = b.stationid) AND (a.date = b.date)\n\
+WHERE (a.metric = 'temperature') AND (b.metric = 'humidity')\n\
+GROUP BY a.stationid;");
+        } else if (choice == '7') {
+            $('#query_string').text(
+"SELECT a.stationid AS station,\n\
+CORR(a.median, b.median) as corr_temp_humid\n\
+FROM weathercql.daily a JOIN weathercql.daily b\n\
+ON (a.stationid = b.stationid) AND (a.date = b.date)\n\
+WHERE (a.metric = 'temperature') AND (b.metric = 'humidity')\n\
+AND (a.stationid = 'GKA') AND (b.stationid = 'GKA')\n\
+GROUP BY a.stationid;");
+        }
+    });
+
+    </script>
+{% endblock %}

@@ -1,0 +1,88 @@
+#!/bin/bash
+# Monitor for the DataStax agent.  This should run forever and check to make
+# sure that the agent is running every 30 seconds.
+
+PIDFILE=/Users/crupib/dse/tmp/datastax-agent/datastax-agent-monitor.pid
+NAME="datastax_agent_monitor"
+DESC="DataStax agent monitor"
+
+function is_running {
+    PID="$(cat "$PIDFILE" 2>/dev/null)"
+    if [[ -z "$PID" ]]; then
+        return 1
+    fi
+    if grep -q "$NAME" "/proc/$PID/cmdline" 2>/dev/null; then
+        return 0
+    else
+        return 2
+    fi
+}
+
+# Define LSB log_* functions.
+# Depend on lsb-base (>= 3.0-6) to ensure that this file is present.
+[ -r /lib/lsb/init-functions ] && . /lib/lsb/init-functions
+
+function log {
+    log_type=$1
+    have_type="false"
+    if [[ $log_type == "warning" || $log_type == "failure" || $log_type == "success" ]]; then
+        have_type="true"
+        shift
+    fi
+
+    funcname="echo"
+    if [ $have_type == "true" ]; then
+        if   [ $log_type == "warning" -a "`type -t log_warning_msg`" == 'function' ]; then
+            funcname="log_warning_msg"
+        elif [ $log_type == "failure" -a "`type -t log_failure_msg`" == 'function' ]; then
+            funcname="log_failure_msg"
+        elif [ $log_type == "success" -a "`type -t log_success_msg`" == 'function' ]; then
+            funcname="log_success_msg"
+        elif [ "`type -t log_daemon_msg`" == 'function' ]; then
+            funcname="log_daemon_msg"
+        fi
+    else
+        if [ "`type -t log_success_msg`" == 'function' ]; then
+            funcname="log_success_msg"
+        elif [ "`type -t log_daemon_msg`" == 'function' ]; then
+            funcname="log_daemon_msg"
+        fi
+    fi
+
+    $funcname $@
+}
+
+# Die if there's already a monitor running
+if is_running; then
+    exit 1
+else
+    log "Starting $DESC" "$NAME"
+    echo $$ > "$PIDFILE"
+fi
+
+HAVE_SERVICE=0
+SERVICE=$(which service 2>/dev/null)
+if [ ! -x "$SERVICE" ]; then
+    if [ -x /sbin/service ]; then
+        SERVICE="/sbin/service"
+    elif [ -x "`which invoke-rc.d 2>/dev/null`" ]; then
+        SERVICE="invoke-rc.d"
+    else
+        HAVE_SERVICE=1
+    fi
+fi
+
+# Make sure the agent is always running
+while [ 0 ]; do
+    sleep 30
+
+    if [ $HAVE_SERVICE -eq 0 ]; then
+        $SERVICE datastax-agent start &>/dev/null
+    else
+        /etc/init.d/datastax-agent start &>/dev/null
+    fi
+
+    if [ $? -eq 2 ]; then
+        log "failure" "Unable to start /etc/init.d/datastax-agent"
+    fi
+done

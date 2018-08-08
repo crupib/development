@@ -1,0 +1,59 @@
+#!/bin/sh
+
+EXEC=$(which dse 2> /dev/null)
+if [ ! -x "$EXEC" ]; then
+  EXEC=
+fi
+if [ "$EXEC" = "" ]; then
+  if [ -x ./bin/dse ]; then
+    EXEC=./bin/dse
+  fi
+fi
+if [ "$EXEC" != "" ]; then
+  PREV_VERSION=$("$EXEC" -v)
+  if [ $? -eq 0 ]; then
+    echo "$PREV_VERSION"
+    exit 0
+  fi
+fi
+
+EXEC=$(which cassandra 2> /dev/null)
+if [ ! -x "$EXEC" ]; then
+  EXEC=
+fi
+if [ "$EXEC" = "" ]; then
+  if [ -x /usr/sbin/cassandra ]; then
+    EXEC=/usr/sbin/cassandra
+  fi
+  if [ -x ./bin/cassandra ]; then
+    EXEC=./bin/cassandra
+  fi
+fi
+if [ "$EXEC" != "" ]; then
+  PREV_VERSION=$("$EXEC" -v)
+  if [ $? -eq 0 ]; then
+    echo "$PREV_VERSION"
+    exit 0
+  fi
+fi
+
+if [ -f README.md ]; then
+  README_FILE=README.md
+elif [ -f "$1" ]; then
+  README_FILE=$1
+elif [ -f /usr/share/dse/README.md ]; then
+  README_FILE=/usr/share/dse/README.md
+elif [ -f /usr/share/doc/dse-full/README.md ]; then
+  README_FILE=/usr/share/doc/dse-full/README.md
+else
+  README_FILE=$(echo /usr/share/doc/dse-full*/README.md)
+  if [ ! -f "$README_FILE" ]; then
+    exit 0
+  fi
+fi
+
+PREV_VERSION=$(grep 'Welcome to' "$README_FILE" | sed -e 's/Welcome to DataStax Enterprise Edition //g' | sed -e 's/. DataStax//g')
+echo "$PREV_VERSION"
+
+exit 0
+

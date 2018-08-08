@@ -1,0 +1,2 @@
+SEQUENTIAL
+CQL|INSERT INTO demo.solr (id, type, text) VALUES ('$RANDOM_UUID', '$RANDOM_10', 'This is a benchmark of dse search')

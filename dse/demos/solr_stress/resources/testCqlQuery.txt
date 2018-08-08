@@ -1,0 +1,2 @@
+SEQUENTIAL
+CQL|SELECT * from demo.solr where solr_query='{"q":"text:*"}'

@@ -1,0 +1,1 @@
+/Users/crupib/dse/uninstall.app

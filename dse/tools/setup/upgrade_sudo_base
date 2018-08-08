@@ -1,0 +1,188 @@
+#!/bin/sh
+
+set -x
+
+if [ -f /tmp/dsupgrade_sudo_base.log ]; then
+  rm -f /tmp/dsupgrade_sudo_base.log
+fi
+
+{
+PRODUCT_TYPE=$1
+UNPACK_FOLDER=$2
+DISTRIBUTION=$3
+DISTRIBUTION_VERSION=$4
+CALL_DIR=$5
+SUDO_SCRIPT=$6
+
+if [ "$PRODUCT_TYPE" = "" ]; then
+  if [ -f /etc/init.d/dse ]; then
+    PRODUCT_TYPE="dse"
+  elif [ -f /etc/init.d/cassandra ]; then
+    PRODUCT_TYPE="dsc"
+  else
+    PRODUCT_TYPE="dse"
+  fi
+fi
+
+if [ "$DISTRIBUTION" = "" ]; then
+  if [ -d /Applications ]; then
+    DISTRIBUTION="osx"
+  else
+    if [ -f /etc/redhat-release ]; then
+      grep CentOS /etc/redhat-release
+      if [ $? = 0 ]; then
+        DISTRIBUTION="centos"
+      else
+        grep RedHat /etc/redhat-release
+        if [ $? = 0 ]; then
+          DISTRIBUTION="centos"
+        fi
+      fi
+    fi
+  fi
+fi
+if [ "$DISTRIBUTION_VERSION" = "" ]; then
+  if [ "$DISTRIBUTION" = "osx" ]; then
+    DISTRIBUTION_VERSION=$(sw_vers | grep 'ProductVersion:' | grep -o '[0-9]*\.[0-9]*\.[0-9]*')
+  elif [ "$DISTRIBUTION" = "centos" ]; then
+    DISTRIBUTION_VERSION=$(grep -o '[0-9]*\.[0-9]*' /etc/redhat-release)
+  elif [ "$DISTRIBUTION" = "redhat" ]; then
+    DISTRIBUTION_VERSION=$(grep -o '[0-9]*\.[0-9]*' /etc/redhat-release)
+  elif [ "$DISTRIBUTION" = "debian" ]; then
+echo 2
+  elif [ "$DISTRIBUTION" = "suse" ]; then
+echo 2
+  elif [ "$DISTRIBUTION" = "fedora" ]; then
+echo 2
+  elif [ "$DISTRIBUTION" = "windows" ]; then
+echo 2
+  else
+    DISTRIBUTION_VERSION="unkown"
+  fi
+fi
+DISTRIBUTION_MAJOR_VERSION=$(echo $DISTRIBUTION_VERSION|sed -e 's/\.[0-9]*$//g')
+
+BACKUP_DIR=$UNPACK_FOLDER/dssystem
+
+echo Running sudo base upgrade
+echo Arguments: "$*"
+echo
+env
+
+# print configuration
+echo "sudo_script: $SUDO_SCRIPT"
+echo "distribution: $DISTRIBUTION"
+echo "distribution major version: $DISTRIBUTION_MAJOR_VERSION"
+
+# Preserve old installer files out of the way if they exist
+if [ -f /etc/default/dse ]; then
+  echo cp /etc/default/dse "$BACKUP_DIR"
+  cp /etc/default/dse "$BACKUP_DIR"/dse.default
+fi
+if [ -f /etc/init.d/dse ]; then
+  echo cp /etc/init.d/dse "$BACKUP_DIR"
+  cp /etc/init.d/dse "$BACKUP_DIR"/dse.init
+fi
+if [ -f /usr/share/dse/dse.in.sh ]; then
+  echo cp /usr/share/dse/dse.in.sh "$BACKUP_DIR"
+  cp /usr/share/dse/dse.in.sh "$BACKUP_DIR"
+fi
+if [ -f /usr/share/dse/byoh.in.sh ]; then
+  echo cp -r /usr/share/dse/byoh.in.sh "$BACKUP_DIR"
+  cp -r /usr/share/dse/byoh.in.sh "$BACKUP_DIR"
+fi
+if [ -d /etc/dse ]; then
+  echo cp -rL /etc/dse "$BACKUP_DIR"
+  cp -rL /etc/dse "$BACKUP_DIR"
+fi
+if [ -f /etc/default/cassandra ]; then
+  echo cp /etc/default/cassandra "$BACKUP_DIR"/cassandra.default
+  cp /etc/default/cassandra "$BACKUP_DIR"/cassandra.default
+fi
+if [ -f /etc/init.d/cassandra ]; then
+  echo cp /etc/init.d/cassandra "$BACKUP_DIR"/cassandra.init
+  cp /etc/init.d/cassandra "$BACKUP_DIR"/cassandra.init
+fi
+if [ -d /etc/cassandra ]; then
+  echo cp -rL /etc/cassandra "$BACKUP_DIR"
+  cp -rL /etc/cassandra "$BACKUP_DIR"
+fi
+if [ -f /etc/init.d/datastax-agent ]; then
+  echo cp /etc/init.d/datastax-agent "$BACKUP_DIR"/datastax-agent.initd
+  cp /etc/init.d/datastax-agent "$BACKUP_DIR"/datastax-agent.initd
+fi
+if [ -f /var/lib/datastax-agent/conf/address.yaml ]; then
+  echo cp /var/lib/datastax-agent/conf/address.yaml "$BACKUP_DIR"
+  cp /var/lib/datastax-agent/conf/address.yaml "$BACKUP_DIR"
+fi
+if [ -d /etc/datastax-agent ]; then
+  echo cp -r /etc/datastax-agent "$BACKUP_DIR"
+  cp -r /etc/datastax-agent "$BACKUP_DIR"
+fi
+if [ -d /etc/opscenter ]; then
+  echo cp -r /etc/opscenter "$BACKUP_DIR"
+  cp -r /etc/opscenter "$BACKUP_DIR"
+fi
+if [ -d /etc/opscenter ]; then
+  echo cp -r /etc/opscenter "$BACKUP_DIR"
+  cp -r /etc/opscenter "$BACKUP_DIR"
+fi
+
+# Uninstall packages
+if [ "$DISTRIBUTION" != "osx" ]; then
+  if [ "$DISTRIBUTION" = "redhat" -o "$DISTRIBUTION" = "fedora" -o \
+       "$DISTRIBUTION" = "centos" -o "$DISTRIBUTION" = "suse" ]; then
+    rpm -qa | grep dse-full
+    if [ $? -eq 0 ]; then
+      echo uninstall dse-full
+      rpm -q libspark
+      if [ $? -ne 0 ]; then
+        yum -y remove dse-full dse dse-demos dse-hive dse-pig dse-libcassandra dse-libhadoop dse-libhadoop-native dse-libhive dse-liblog4j dse-libmahout dse-libpig dse-libsolr dse-libsqoop dse-libtomcat datastax-agent
+      else
+        yum -y remove dse-full dse dse-demos dse-hive dse-pig dse-libcassandra dse-libhadoop dse-libhadoop-native dse-libhive dse-liblog4j dse-libmahout dse-libpig dse-libsolr dse-libsqoop dse-libtomcat datastax-agent dse-libspark
+      fi
+    fi
+  else
+    dpkg -s dse-full | grep Status
+    if [ $? -eq 0 ]; then
+      echo uninstall dse-full
+      dpkg -s dse-libspark | grep Status
+      if [ $? -ne 0 ]; then
+        apt-get -y remove dse-full dse dse-demos dse-hive dse-pig dse-libcassandra dse-libhadoop dse-libhadoop-native dse-libhive dse-liblog4j dse-libmahout dse-libpig dse-libsolr dse-libsqoop dse-libtomcat datastax-agent
+      else
+        apt-get -y remove dse-full dse dse-demos dse-hive dse-pig dse-libcassandra dse-libhadoop dse-libhadoop-native dse-libhive dse-liblog4j dse-libmahout dse-libpig dse-libsolr dse-libsqoop dse-libtomcat datastax-agent dse-libspark
+      fi
+    fi
+    dpkg -s dsc | grep Status
+    if [ $? -eq 0 ]; then
+      echo uninstall dsc
+      apt-get -y remove dsc cassandra
+    fi
+    dpkg -s dsc1.1 | grep Status
+    if [ $? -eq 0 ]; then
+      echo uninstall dsc1.1
+      apt-get -y remove dsc1.1 cassandra
+    fi
+    dpkg -s dsc12 | grep Status
+    if [ $? -eq 0 ]; then
+      echo uninstall dsc12
+      apt-get -y remove dsc12 cassandra
+    fi
+    dpkg -s dsc20 | grep Status
+    if [ $? -eq 0 ]; then
+      echo uninstall dsc20
+      apt-get -y remove dsc20 cassandra
+    fi
+    dpkg -s dsc21 | grep Status
+    if [ $? -eq 0 ]; then
+      echo uninstall dsc21
+      apt-get -y remove dsc21 cassandra
+    fi
+  fi
+fi
+
+echo Running sudo base upgrade DONE
+exit 0
+} 2>&1 | tee -a /tmp/dsupgrade_sudo_base.log
+chmod a+w /tmp/dsupgrade_sudo_base.log
+

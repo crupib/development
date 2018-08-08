@@ -1,0 +1,60 @@
+apply plugin: 'scala'
+apply plugin:'application'
+
+group = 'com.datastax'
+
+mainClassName = 'com.datastax.HttpRequestGenerator'
+
+jar {
+    baseName = 'target/HttpRequestGenerator'
+    manifest.attributes("Main-Class": mainClassName)
+}
+
+
+ext {
+    httpClientVersion = '4.3.5'
+    scoptVersion = '3.2.0'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compile "org.scala-lang:scala-compiler:${scalaVersion}"
+    compile "org.scala-lang:scala-library:${scalaVersion}"
+    compile "org.scala-lang:scala-reflect:${scalaVersion}"
+
+    compile "org.apache.httpcomponents:httpclient:${httpClientVersion}"
+    compile "com.github.scopt:scopt_${scalaLibVersion}:${scoptVersion}"
+}
+
+clean.delete 'target'
+
+run {
+    if (project.hasProperty('ips')) {
+        args = ['-i', ips]
+    }
+    if (project.hasProperty('numThreads')) {
+        args += ['-t', numThreads]
+    }
+}
+
+if (parent) {
+    idea.module.iml {
+        beforeMerged {
+            it.dependencies.clear()
+        }
+        whenMerged {
+            it.dependencies*.exported = "true"
+        }
+        withXml { xml ->
+            def rootManager = xml.node.component.find { it.@name == "NewModuleRootManager" }
+            rootManager.appendNode("orderEntry", [type: "library", name: "scala-sdk-$scalaVersion", level: "project"])
+        }
+    }
+}
+
+
+// assemble just jar, ignore building other artifacts introduced by application plugin
+assemble.dependsOn = [ jar ]

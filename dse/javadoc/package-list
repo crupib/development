@@ -1,0 +1,9 @@
+org.apache.cassandra.db
+org.apache.cassandra.db.compaction
+org.apache.cassandra.io.compress
+org.apache.cassandra.locator
+org.apache.cassandra.thrift
+org.apache.hadoop.mapred
+org.apache.hadoop.thriftfs.api
+org.apache.hadoop.thriftfs.jobtracker.api
+org.apache.hive.service.auth

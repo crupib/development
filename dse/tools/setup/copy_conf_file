@@ -1,0 +1,16 @@
+#!/bin/sh
+
+TEMPLATE_FILE_NAME=$1
+CONF_FILE_NAME=$(basename "$TEMPLATE_FILE_NAME" .new)
+TARGET_DIR=$(dirname "$1")
+
+if [ ! -f "$TARGET_DIR/$CONF_FILE_NAME" ]; then
+  # only copy in plave if there isn't a conf file already
+  echo "copying config file template $TEMPLATE_FILE_NAME to $TARGET_DIR/$CONF_FILE_NAME"
+  cp "$TEMPLATE_FILE_NAME" "$TARGET_DIR/$CONF_FILE_NAME"
+else
+  echo "$TARGET_DIR/$CONF_FILE_NAME already exists... not overwriting"
+fi
+
+exit 0
+

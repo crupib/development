@@ -1,0 +1,13 @@
+#!/bin/sh
+
+if [ -f /etc/default/dse ]; then
+  . /etc/default/dse
+fi
+
+if [ -f "$(dirname "$0")/../resources/cassandra/bin/cqlsh" ]; then
+  exec "$(dirname "$0")/../resources/cassandra/bin/cqlsh" "$@"
+else
+  exec "$DSE_HOME"/resources/cassandra/bin/cqlsh "$@"
+fi
+
+# vi:ai sw=4 ts=4 tw=0 et
